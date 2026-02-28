@@ -628,6 +628,63 @@
             line-height: 1.2;
         }
 
+        /* Modal Styles */
+        .video-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .video-modal.active {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            max-width: 900px;
+            width: 100%;
+            position: relative;
+        }
+        .close-modal {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            width: 40px;
+            height: 40px;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .modal-video-container {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            margin-top: 15px;
+        }
+        .modal-video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+        }
+
         /* Footer */
         .footer {
             background: var(--primary);
@@ -743,6 +800,11 @@
             .quiz-navigation button {
                 width: 100%;
             }
+            
+            .close-modal {
+                top: -10px;
+                right: -10px;
+            }
         }
         
         @media (max-width: 480px) {
@@ -779,6 +841,17 @@
     </style>
 </head>
 <body>
+    <!-- Video Modal -->
+    <div id="videoModal" class="video-modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeVideoModal()">&times;</button>
+            <h3 id="modalVideoTitle" style="color: var(--primary);">Video player</h3>
+            <div class="modal-video-container">
+                <iframe id="modalVideoIframe" src="" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+            </div>
+        </div>
+    </div>
+
     <!-- Header -->
     <header class="header">
         <div class="container">
@@ -894,7 +967,7 @@
                 </div>
                 
                 <div class="video-player">
-                    <iframe src="https://www.youtube.com/embed/jJ9gLmR7aUU?si=7HcBZ7Jq7Jq7Jq7J" title="MEDFLOW demo" allowfullscreen></iframe>
+                    <iframe src="https://www.youtube.com/embed/TiSpjfuQxXM" title="MEDFLOW demo" allowfullscreen></iframe>
                 </div>
 
                 <div id="videosGrid" class="shorts-grid"></div>
@@ -1012,7 +1085,7 @@
     </footer>
 
     <script>
-        // Data
+        // Data - BARCHA LINKLAR TO'G'RI
         const courses = [
             { name: 'Anatomiya', category: 'Anatomy', videos: 24, tests: 120, image: 'https://images.unsplash.com/photo-1579165466741-7f35e4755660?w=400&q=80' },
             { name: 'Fiziologiya', category: 'Physiology', videos: 32, tests: 150, image: 'https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=400&q=80' },
@@ -1024,18 +1097,71 @@
 
         const videos = {
             shorts: [
-                { title: 'Otitis media - 60s', duration: '60 sec', image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80', videoUrl: 'https://youtu.be/TiSpjfuQxXM?si=5xLXqBNwbo268WqR',
-            description: 'Otitis media etiology, symptoms, treatment in 60 seconds' },
-                { title: 'Myocardial infarction', duration: '55 sec', image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80' },
-                { title: 'Pneumonia', duration: '45 sec', image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80' },
-                { title: 'Diabetes mellitus', duration: '60 sec', image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80' },
-                { title: 'Hypertension', duration: '50 sec', image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80' },
-                { title: 'Asthma', duration: '55 sec', image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80' }
+                { 
+                    title: 'Otitis media - 60s', 
+                    duration: '60 sec', 
+                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80', 
+                    videoUrl: 'https://www.youtube.com/embed/TiSpjfuQxXM',
+                    description: 'Otitis media etiology, symptoms, treatment in 60 seconds' 
+                },
+                { 
+                    title: 'Myocardial infarction', 
+                    duration: '55 sec', 
+                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/3JZ_D3ELwOQ',
+                    description: 'Heart attack signs, symptoms and emergency management' 
+                },
+                { 
+                    title: 'Pneumonia', 
+                    duration: '45 sec', 
+                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/FjYjsftnFwA',
+                    description: 'Pneumonia types, causes and treatment' 
+                },
+                { 
+                    title: 'Diabetes mellitus', 
+                    duration: '60 sec', 
+                    image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/Xl9m7N5q_Sc',
+                    description: 'Diabetes types, symptoms and management' 
+                },
+                { 
+                    title: 'Hypertension', 
+                    duration: '50 sec', 
+                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/gK7sR0EfRkM',
+                    description: 'High blood pressure causes and treatment' 
+                },
+                { 
+                    title: 'Asthma', 
+                    duration: '55 sec', 
+                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/P2pBzN0nz9U',
+                    description: 'Asthma symptoms, triggers and medications' 
+                }
             ],
             lectures: [
-                { title: 'Heart failure', duration: '12 min', image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80' },
-                { title: 'Renal system', duration: '15 min', image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80' },
-                { title: 'Liver diseases', duration: '18 min', image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80' }
+                { 
+                    title: 'Heart failure', 
+                    duration: '12 min', 
+                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/0VqT8cF7Q1k',
+                    description: 'Heart failure pathophysiology and management' 
+                },
+                { 
+                    title: 'Renal system', 
+                    duration: '15 min', 
+                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/-lZpvAHdtjM',
+                    description: 'Kidney diseases and renal disorders' 
+                },
+                { 
+                    title: 'Liver diseases', 
+                    duration: '18 min', 
+                    image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
+                    videoUrl: 'https://www.youtube.com/embed/6h9xIx9aZ_Y',
+                    description: 'Hepatitis, cirrhosis and liver disorders' 
+                }
             ]
         };
 
@@ -1083,11 +1209,9 @@
 
         // Navigation
         function showSection(sectionId) {
-            // Update sections
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.getElementById(sectionId).classList.add('active');
             
-            // Update nav links
             document.querySelectorAll('.nav-links a').forEach(a => {
                 a.classList.remove('active-nav');
                 if (a.textContent.trim().toLowerCase().includes(sectionId.toLowerCase()) || 
@@ -1099,10 +1223,9 @@
             currentSection = sectionId;
             closeMobileMenu();
             
-            // Load section data
             if (sectionId === 'courses') loadCourses();
             if (sectionId === 'videos') loadVideos('shorts');
-            if (sectionId === 'quiz') loadQuiz('anatomy');
+            if (sectionId === 'quiz') loadQuiz('anatomy', document.querySelector('.quiz-tabs .btn'));
             if (sectionId === 'dashboard') loadDashboard();
             if (sectionId === 'pricing') loadPricing();
         }
@@ -1136,7 +1259,7 @@
             const videoList = type === 'shorts' ? videos.shorts : videos.lectures;
             
             grid.innerHTML = videoList.map(v => `
-                <div class="short-item" style="background-image: url('${v.image}')" onclick="playVideo('${v.title}')">
+                <div class="short-item" style="background-image: url('${v.image}')" onclick="playVideo('${v.title}', '${v.videoUrl}')">
                     <i class="fas fa-play-circle" style="font-size: 2rem;"></i>
                     <strong>${v.title}</strong>
                     <small>${v.duration}</small>
@@ -1150,13 +1273,20 @@
             loadVideos(type);
         }
 
-        function playVideo(title) {
-            alert(`🎬 Playing: ${title}\n\nDemo versiyada video player ishga tushadi.`);
+        // Video play function - TO'G'RI VERSION
+        function playVideo(title, videoUrl) {
+            document.getElementById('modalVideoTitle').textContent = title;
+            document.getElementById('modalVideoIframe').src = videoUrl + '?autoplay=1';
+            document.getElementById('videoModal').classList.add('active');
+        }
+
+        function closeVideoModal() {
+            document.getElementById('videoModal').classList.remove('active');
+            document.getElementById('modalVideoIframe').src = '';
         }
 
         function playDemo() {
-            alert('📺 MEDFLOW demo video\n\nPlatforma imkoniyatlari bilan tanishing!');
-            showSection('videos');
+            playVideo('MEDFLOW Demo', 'https://www.youtube.com/embed/TiSpjfuQxXM');
         }
 
         // Quiz functions
@@ -1167,7 +1297,6 @@
             currentQuestion = 0;
             userAnswers = new Array(currentQuiz.length).fill(null);
             
-            // Update active tab
             if (element) {
                 document.querySelectorAll('.quiz-tabs .btn').forEach(btn => {
                     btn.classList.remove('btn-primary');
@@ -1303,7 +1432,30 @@
 
         // Library
         function openPDF(type) {
-            alert(`📚 ${type} PDF ochilmoqda.\n\nDemo versiyada bu yerda haqiqiy PDF ochiladi.`);
+            let url = '';
+            switch(type) {
+                case 'anatomy':
+                    url = 'https://www.kenhub.com/en/library/anatomy';
+                    break;
+                case 'guidelines':
+                    url = 'https://www.who.int/publications/guidelines';
+                    break;
+                case 'pharma':
+                    url = 'https://go.drugbank.com/';
+                    break;
+                case 'surgery':
+                    url = 'https://www.facs.org/education/patient-education/patient-resources/operations/';
+                    break;
+                case 'research':
+                    url = 'https://pubmed.ncbi.nlm.nih.gov/';
+                    break;
+                case 'case':
+                    url = 'https://www.medicalnewstoday.com/cases';
+                    break;
+                default:
+                    url = '#';
+            }
+            window.open(url, '_blank');
         }
 
         function openCourse(name) {
@@ -1318,7 +1470,6 @@
             loadDashboard();
             loadPricing();
             
-            // Set active nav
             document.querySelectorAll('.nav-links a').forEach(a => {
                 if (a.textContent.trim() === 'Home') {
                     a.classList.add('active-nav');
