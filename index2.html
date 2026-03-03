@@ -29,10 +29,10 @@
     <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
     <link rel="apple-touch-icon" href="/images/logo.svg">
     
-    <!-- Font Awesome 6 (optimized - only needed icons) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Google Fonts with display swap -->
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Main CSS -->
@@ -50,6 +50,11 @@
     </script>
 </head>
 <body>
+    <!-- Loading Indicator -->
+    <div id="globalLoader" class="global-loader" style="display: none;">
+        <div class="loader-spinner"></div>
+    </div>
+
     <!-- Video Modal -->
     <div id="videoModal" class="modal video-modal" aria-hidden="true">
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalVideoTitle">
@@ -78,7 +83,7 @@
                 <button type="submit" class="btn btn-primary btn-block">Kirish</button>
             </form>
             <p class="modal-footer">
-                Hisobingiz yo'qmi? <a href="#" onclick="showRegister()">Ro'yxatdan o'tish</a>
+                Hisobingiz yo'qmi? <a href="#" onclick="showRegisterModal()">Ro'yxatdan o'tish</a>
             </p>
         </div>
     </div>
@@ -112,7 +117,7 @@
                 <button type="submit" class="btn btn-primary btn-block">Ro'yxatdan o'tish</button>
             </form>
             <p class="modal-footer">
-                Hisobingiz bormi? <a href="#" onclick="showLogin()">Kirish</a>
+                Hisobingiz bormi? <a href="#" onclick="showLoginModal()">Kirish</a>
             </p>
         </div>
     </div>
@@ -138,7 +143,7 @@
                     <li role="listitem"><a onclick="showSection('dashboard')" role="button">Dashboard</a></li>
                     <li role="listitem"><a onclick="showSection('pricing')" role="button">Pricing</a></li>
                     <li role="listitem">
-                        <button class="btn btn-primary" onclick="showLoginModal()">
+                        <button class="btn btn-primary" onclick="showLoginModal()" id="loginBtn">
                             <i class="fas fa-sign-in-alt" aria-hidden="true"></i> Login
                         </button>
                     </li>
@@ -225,7 +230,7 @@
                 <div class="quiz-container">
                     <h2 id="quiz-title">Test Center</h2>
                     <div class="quiz-tabs" role="tablist">
-                        <button class="btn btn-outline" onclick="loadQuiz('anatomy', this)" role="tab">Anatomy</button>
+                        <button class="btn btn-primary" onclick="loadQuiz('anatomy', this)" role="tab">Anatomy</button>
                         <button class="btn btn-outline" onclick="loadQuiz('cardiology', this)" role="tab">Cardiology</button>
                         <button class="btn btn-outline" onclick="loadQuiz('pharma', this)" role="tab">Pharmacology</button>
                     </div>
@@ -288,9 +293,9 @@
                 <div class="footer-links">
                     <h4>Qo'llab-quvvatlash</h4>
                     <ul>
-                        <li><a href="#" onclick="showFAQ(); return false;">FAQ</a></li>
-                        <li><a href="#" onclick="showContact(); return false;">Contact</a></li>
-                        <li><a href="#" onclick="showPrivacy(); return false;">Privacy</a></li>
+                        <li><a href="#" onclick="showNotification('FAQ tez orada', 'info'); return false;">FAQ</a></li>
+                        <li><a href="#" onclick="showNotification('Contact: info@medflow.uz', 'info'); return false;">Contact</a></li>
+                        <li><a href="#" onclick="showNotification('Privacy policy', 'info'); return false;">Privacy</a></li>
                     </ul>
                 </div>
                 
