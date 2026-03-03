@@ -1,1 +1,322 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    
+    <!-- SEO Meta Tags -->
+    <title>MEDFLOW - Tibbiyot ta'lim platformasi | 60 soniyada tibbiyot</title>
+    <meta name="description" content="Tibbiyot talabalari va shifokorlar uchun microlearning platformasi. 60 soniyada murakkab tibbiy bilimlar, testlar, flashcards va AI tavsiyalar.">
+    <meta name="keywords" content="tibbiyot, meditsina, talaba, shifokor, test, video darslik, anatomiya, kardiologiya, farmakologiya">
+    <meta name="author" content="MEDFLOW Team">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph / Facebook / Telegram -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://medflow.uz">
+    <meta property="og:title" content="MEDFLOW - Tibbiyot ta'lim platformasi">
+    <meta property="og:description" content="60 soniyada murakkab tibbiy bilimlar. Tibbiyot talabalari va shifokorlar uchun.">
+    <meta property="og:image" content="https://medflow.uz/images/og-image.jpg">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://medflow.uz">
+    <meta property="twitter:title" content="MEDFLOW - Tibbiyot ta'lim platformasi">
+    <meta property="twitter:description" content="60 soniyada murakkab tibbiy bilimlar">
+    <meta property="twitter:image" content="https://medflow.uz/images/og-image.jpg">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" href="/images/logo.svg">
+    
+    <!-- Font Awesome 6 (optimized - only needed icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    
+    <!-- Google Fonts with display swap -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('✅ Service Worker registered:', reg.scope))
+                    .catch(err => console.log('❌ Service Worker error:', err));
+            });
+        }
+    </script>
+</head>
+<body>
+    <!-- Video Modal -->
+    <div id="videoModal" class="modal video-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalVideoTitle">
+            <button class="modal-close" onclick="closeVideoModal()" aria-label="Yopish">&times;</button>
+            <h3 id="modalVideoTitle" class="modal-title">Video player</h3>
+            <div class="modal-video-container">
+                <iframe id="modalVideoIframe" src="" frameborder="0" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Video player"></iframe>
+            </div>
+        </div>
+    </div>
 
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal login-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+            <button class="modal-close" onclick="closeLoginModal()" aria-label="Yopish">&times;</button>
+            <h3 id="loginModalTitle" class="modal-title">Kirish</h3>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" placeholder="email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Parol</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Kirish</button>
+            </form>
+            <p class="modal-footer">
+                Hisobingiz yo'qmi? <a href="#" onclick="showRegister()">Ro'yxatdan o'tish</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div id="registerModal" class="modal register-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="registerModalTitle">
+            <button class="modal-close" onclick="closeRegisterModal()" aria-label="Yopish">&times;</button>
+            <h3 id="registerModalTitle" class="modal-title">Ro'yxatdan o'tish</h3>
+            <form id="registerForm" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="registerName">Ism</label>
+                    <input type="text" id="registerName" placeholder="Ismingiz" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" placeholder="email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerPassword">Parol</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerRole">Siz kimsiz?</label>
+                    <select id="registerRole" required>
+                        <option value="student">👨‍🎓 Talaba</option>
+                        <option value="doctor">👨‍⚕️ Shifokor</option>
+                        <option value="teacher">👩‍🏫 O'qituvchi</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Ro'yxatdan o'tish</button>
+            </form>
+            <p class="modal-footer">
+                Hisobingiz bormi? <a href="#" onclick="showLogin()">Kirish</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav" aria-label="Asosiy navigatsiya">
+                <a href="/" class="logo" onclick="showSection('home'); return false;" aria-label="MEDFLOW bosh sahifa">
+                    MED<span>FLOW</span>
+                </a>
+                
+                <button class="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menyu" aria-expanded="false">
+                    <i class="fas fa-bars" aria-hidden="true"></i>
+                </button>
+                
+                <ul class="nav-links" id="navLinks" role="list">
+                    <li role="listitem"><a onclick="showSection('home')" class="active-nav" role="button">Home</a></li>
+                    <li role="listitem"><a onclick="showSection('courses')" role="button">Courses</a></li>
+                    <li role="listitem"><a onclick="showSection('videos')" role="button">Videos</a></li>
+                    <li role="listitem"><a onclick="showSection('library')" role="button">Library</a></li>
+                    <li role="listitem"><a onclick="showSection('quiz')" role="button">Tests</a></li>
+                    <li role="listitem"><a onclick="showSection('dashboard')" role="button">Dashboard</a></li>
+                    <li role="listitem"><a onclick="showSection('pricing')" role="button">Pricing</a></li>
+                    <li role="listitem">
+                        <button class="btn btn-primary" onclick="showLoginModal()">
+                            <i class="fas fa-sign-in-alt" aria-hidden="true"></i> Login
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <!-- HOME SECTION -->
+        <section id="home" class="section active" aria-labelledby="home-title">
+            <!-- Hero -->
+            <div class="hero">
+                <div class="container">
+                    <div class="hero-content">
+                        <h1 id="home-title">From Complexity to Clinical Clarity in 60 Seconds</h1>
+                        <p>Tibbiyot talabalari va shifokorlar uchun microlearning platformasi. Murakkab tibbiy bilimlar endi qisqa va tushunarli formatda.</p>
+                        <div class="hero-buttons">
+                            <button class="btn btn-primary" onclick="showSection('courses')">
+                                <i class="fas fa-play-circle" aria-hidden="true"></i> Start Learning
+                            </button>
+                            <button class="btn btn-outline" onclick="playDemo()">
+                                <i class="fas fa-video" aria-hidden="true"></i> Watch Demo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="container">
+                <!-- Features -->
+                <h2 class="section-title">Nima uchun MEDFLOW?</h2>
+                <div class="features-grid" id="featuresGrid"></div>
+
+                <!-- Stats -->
+                <div class="stats-section">
+                    <div class="stats-grid" id="statsGrid"></div>
+                </div>
+
+                <!-- Preview Courses -->
+                <h2>Mashhur kurslar</h2>
+                <div class="courses-grid" id="previewCourses"></div>
+            </div>
+        </section>
+
+        <!-- COURSES SECTION -->
+        <section id="courses" class="section" aria-labelledby="courses-title">
+            <div class="container">
+                <h2 id="courses-title" class="section-title">Barcha kurslar</h2>
+                <div class="courses-grid" id="coursesGrid"></div>
+            </div>
+        </section>
+
+        <!-- VIDEOS SECTION -->
+        <section id="videos" class="section" aria-labelledby="videos-title">
+            <div class="container">
+                <div class="video-section">
+                    <h2 id="videos-title">Video darslar</h2>
+                    <div class="video-tabs" role="tablist">
+                        <button class="video-tab active" onclick="filterVideos('shorts', this)" role="tab" aria-selected="true">Shorts (30-60 sec)</button>
+                        <button class="video-tab" onclick="filterVideos('lectures', this)" role="tab" aria-selected="false">Lectures (5-15 min)</button>
+                    </div>
+                    
+                    <div class="video-player">
+                        <iframe src="https://www.youtube.com/embed/TiSpjfuQxXM" title="MEDFLOW demo" allowfullscreen loading="lazy"></iframe>
+                    </div>
+
+                    <div id="videosGrid" class="shorts-grid"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- LIBRARY SECTION -->
+        <section id="library" class="section" aria-labelledby="library-title">
+            <div class="container">
+                <h2 id="library-title" class="section-title">Medical Library</h2>
+                <div class="library-grid" id="libraryGrid"></div>
+            </div>
+        </section>
+
+        <!-- QUIZ SECTION -->
+        <section id="quiz" class="section" aria-labelledby="quiz-title">
+            <div class="container">
+                <div class="quiz-container">
+                    <h2 id="quiz-title">Test Center</h2>
+                    <div class="quiz-tabs" role="tablist">
+                        <button class="btn btn-outline" onclick="loadQuiz('anatomy', this)" role="tab">Anatomy</button>
+                        <button class="btn btn-outline" onclick="loadQuiz('cardiology', this)" role="tab">Cardiology</button>
+                        <button class="btn btn-outline" onclick="loadQuiz('pharma', this)" role="tab">Pharmacology</button>
+                    </div>
+                    
+                    <div id="quizContent" class="quiz-content"></div>
+                    
+                    <div class="quiz-navigation">
+                        <button class="btn btn-outline" onclick="prevQuestion()" id="prevBtn">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Oldingi
+                        </button>
+                        <span id="questionCounter" class="question-counter">1 / 5</span>
+                        <button class="btn btn-primary" onclick="nextQuestion()" id="nextBtn">
+                            Keyingi <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="quizResult" class="quiz-result" aria-live="polite"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- DASHBOARD SECTION -->
+        <section id="dashboard" class="section" aria-labelledby="dashboard-title">
+            <div class="container">
+                <div class="dashboard">
+                    <h2 id="dashboard-title">Mening dashboard</h2>
+                    <div class="progress-stats" id="dashboardStats"></div>
+                    <div id="dashboardContent" class="dashboard-content"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PRICING SECTION -->
+        <section id="pricing" class="section" aria-labelledby="pricing-title">
+            <div class="container">
+                <h2 id="pricing-title" class="section-title">Tarif rejalari</h2>
+                <div class="pricing-grid" id="pricingGrid"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <h3 class="footer-logo">MED<span>FLOW</span></h3>
+                    <p>Tibbiyot ta'limining yangi avlodi</p>
+                </div>
+                
+                <div class="footer-links">
+                    <h4>Platforma</h4>
+                    <ul>
+                        <li><a onclick="showSection('courses'); closeMobileMenu()">Courses</a></li>
+                        <li><a onclick="showSection('videos'); closeMobileMenu()">Videos</a></li>
+                        <li><a onclick="showSection('library'); closeMobileMenu()">Library</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-links">
+                    <h4>Qo'llab-quvvatlash</h4>
+                    <ul>
+                        <li><a href="#" onclick="showFAQ(); return false;">FAQ</a></li>
+                        <li><a href="#" onclick="showContact(); return false;">Contact</a></li>
+                        <li><a href="#" onclick="showPrivacy(); return false;">Privacy</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-links">
+                    <h4>Ijtimoiy tarmoqlar</h4>
+                    <ul class="social-links">
+                        <li><a href="https://t.me/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram" aria-hidden="true"></i> Telegram</a></li>
+                        <li><a href="https://instagram.com/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-instagram" aria-hidden="true"></i> Instagram</a></li>
+                        <li><a href="https://youtube.com/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-youtube" aria-hidden="true"></i> YouTube</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <div class="copyright">
+                    © <span id="currentYear">2026</span> MEDFLOW. Barcha huquqlar himoyalangan.
+                </div>
+                <div class="footer-badges">
+                    <span class="badge">🚀 MVP Version 1.0</span>
+                    <span class="badge">🩺 For Medical Education</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Main JavaScript -->
+    <script src="js/main.js"></script>
+</body>
+</html>
