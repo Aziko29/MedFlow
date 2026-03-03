@@ -3,1479 +3,320 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>MEDFLOW | Tibbiy ta'lim platformasi</title>
-    <!-- Font Awesome 6 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
+    
+    <!-- SEO Meta Tags -->
+    <title>MEDFLOW - Tibbiyot ta'lim platformasi | 60 soniyada tibbiyot</title>
+    <meta name="description" content="Tibbiyot talabalari va shifokorlar uchun microlearning platformasi. 60 soniyada murakkab tibbiy bilimlar, testlar, flashcards va AI tavsiyalar.">
+    <meta name="keywords" content="tibbiyot, meditsina, talaba, shifokor, test, video darslik, anatomiya, kardiologiya, farmakologiya">
+    <meta name="author" content="MEDFLOW Team">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph / Facebook / Telegram -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://medflow.uz">
+    <meta property="og:title" content="MEDFLOW - Tibbiyot ta'lim platformasi">
+    <meta property="og:description" content="60 soniyada murakkab tibbiy bilimlar. Tibbiyot talabalari va shifokorlar uchun.">
+    <meta property="og:image" content="https://medflow.uz/images/og-image.jpg">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://medflow.uz">
+    <meta property="twitter:title" content="MEDFLOW - Tibbiyot ta'lim platformasi">
+    <meta property="twitter:description" content="60 soniyada murakkab tibbiy bilimlar">
+    <meta property="twitter:image" content="https://medflow.uz/images/og-image.jpg">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" href="/images/logo.svg">
+    
+    <!-- Font Awesome 6 (optimized - only needed icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    
+    <!-- Google Fonts with display swap -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        :root {
-            --primary: #0A2540;
-            --primary-light: #1e3a5f;
-            --accent: #2FBF71;
-            --accent-dark: #239e5a;
-            --gray-100: #f8fafc;
-            --gray-200: #f1f5f9;
-            --gray-300: #e2e8f0;
-            --gray-400: #cbd5e1;
-            --gray-500: #94a3b8;
-            --gray-600: #64748b;
-            --gray-700: #475569;
-            --gray-800: #334155;
-            --gray-900: #1e293b;
-            --shadow-sm: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1);
-            --radius-sm: 8px;
-            --radius-md: 12px;
-            --radius-lg: 20px;
-            --radius-xl: 30px;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            color: var(--gray-900);
-            line-height: 1.6;
-            background: var(--gray-100);
-            overflow-x: hidden;
-            width: 100%;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 20px;
-        }
-
-        h1, h2, h3, h4 {
-            font-weight: 700;
-            line-height: 1.2;
-        }
-
-        h1 { 
-            font-size: clamp(2rem, 5vw, 3.5rem); 
-        }
-        h2 { 
-            font-size: clamp(1.8rem, 4vw, 2.5rem); 
-            margin-bottom: 1.5rem; 
-        }
-        h3 { 
-            font-size: clamp(1.2rem, 3vw, 1.5rem); 
-            margin-bottom: 0.8rem; 
-        }
-
-        .section-title {
-            position: relative;
-            display: inline-block;
-            margin-bottom: 2rem;
-            font-size: clamp(1.8rem, 4vw, 2.5rem);
-        }
-        .section-title:after {
-            content: '';
-            position: absolute;
-            bottom: -10px;
-            left: 0;
-            width: 60px;
-            height: 4px;
-            background: var(--accent);
-            border-radius: 2px;
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 12px 24px;
-            border-radius: var(--radius-md);
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border: none;
-            font-size: 1rem;
-            white-space: nowrap;
-        }
-
-        .btn-primary {
-            background: var(--accent);
-            color: var(--primary);
-        }
-        .btn-primary:hover {
-            background: var(--accent-dark);
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
-        }
-
-        .btn-outline {
-            border: 2px solid var(--accent);
-            color: var(--accent);
-            background: transparent;
-        }
-        .btn-outline:hover {
-            background: var(--accent);
-            color: white;
-        }
-
-        /* Header & Navigation */
-        .header {
-            background: var(--primary);
-            color: white;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            box-shadow: var(--shadow-md);
-            width: 100%;
-        }
-
-        .nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.8rem 0;
-            position: relative;
-        }
-
-        .logo {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: white;
-            text-decoration: none;
-            z-index: 1001;
-        }
-        .logo span {
-            color: var(--accent);
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 1.5rem;
-            align-items: center;
-        }
-
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s;
-            cursor: pointer;
-            font-size: 1rem;
-            padding: 0.5rem 0;
-        }
-        .nav-links a:hover {
-            color: var(--accent);
-        }
-        
-        .nav-links a.active-nav {
-            color: var(--accent);
-            border-bottom: 2px solid var(--accent);
-        }
-
-        .mobile-menu-btn {
-            display: none;
-            font-size: 1.8rem;
-            cursor: pointer;
-            z-index: 1001;
-            color: white;
-        }
-
-        /* Sections */
-        .section {
-            display: none;
-            padding: 30px 0;
-            width: 100%;
-        }
-        .section.active {
-            display: block;
-        }
-
-        /* Hero */
-        .hero {
-            background: linear-gradient(135deg, var(--primary), var(--primary-light));
-            color: white;
-            padding: 60px 0;
-            position: relative;
-            overflow: hidden;
-            width: 100%;
-        }
-
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -10%;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(47,191,113,0.2) 0%, transparent 70%);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-
-        .hero-content {
-            position: relative;
-            z-index: 2;
-            max-width: 700px;
-        }
-        
-        .hero p {
-            font-size: clamp(1rem, 2.5vw, 1.2rem);
-            margin: 1.5rem 0;
-        }
-        
-        .hero-buttons {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-        
-        .hero-buttons .btn {
-            flex: 1 1 auto;
-            min-width: 150px;
-        }
-
-        /* Features Grid */
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 40px 0;
-        }
-
-        .feature-card {
-            background: white;
-            padding: 25px 20px;
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-sm);
-            transition: all 0.3s;
-            text-align: center;
-            height: 100%;
-        }
-        .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .feature-icon {
-            width: 70px;
-            height: 70px;
-            background: rgba(47,191,113,0.1);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-        }
-        .feature-icon i {
-            font-size: 30px;
-            color: var(--accent);
-        }
-
-        /* Courses Grid */
-        .courses-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-
-        .course-card {
-            background: white;
-            border-radius: var(--radius-lg);
-            overflow: hidden;
-            box-shadow: var(--shadow-sm);
-            transition: all 0.3s;
-            cursor: pointer;
-            height: 100%;
-        }
-        .course-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .course-image {
-            height: 160px;
-            background-size: cover;
-            background-position: center;
-            position: relative;
-        }
-
-        .course-content {
-            padding: 20px;
-        }
-
-        .course-meta {
-            display: flex;
-            gap: 15px;
-            color: var(--gray-600);
-            font-size: 0.9rem;
-            margin: 10px 0;
-            flex-wrap: wrap;
-        }
-
-        .course-category {
-            background: rgba(47,191,113,0.1);
-            color: var(--accent);
-            padding: 4px 12px;
-            border-radius: 50px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            display: inline-block;
-        }
-
-        /* Video Section */
-        .video-section {
-            background: white;
-            border-radius: var(--radius-xl);
-            padding: 30px 20px;
-            margin: 40px 0;
-        }
-
-        .video-player {
-            width: 100%;
-            background: var(--gray-900);
-            border-radius: var(--radius-lg);
-            aspect-ratio: 16/9;
-            margin: 20px 0;
-            overflow: hidden;
-        }
-
-        .video-player iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-
-        .video-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .video-tab {
-            padding: 8px 16px;
-            background: var(--gray-200);
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-            font-size: 0.95rem;
-        }
-        .video-tab.active {
-            background: var(--accent);
-            color: white;
-        }
-
-        .shorts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .short-item {
-            background: var(--gray-200);
-            border-radius: var(--radius-lg);
-            padding: 20px 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            background-size: cover;
-            background-position: center;
-            color: white;
-            min-height: 140px;
-            position: relative;
-        }
-        .short-item::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.8));
-            border-radius: var(--radius-lg);
-            pointer-events: none;
-        }
-        .short-item > * {
-            position: relative;
-            z-index: 1;
-        }
-        .short-item:hover {
-            transform: scale(1.02);
-        }
-
-        /* Quiz Section */
-        .quiz-container {
-            background: white;
-            border-radius: var(--radius-xl);
-            padding: 30px 20px;
-            margin: 30px 0;
-        }
-
-        .quiz-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-            flex-wrap: wrap;
-        }
-        
-        .quiz-tabs .btn {
-            flex: 1 1 auto;
-            min-width: 120px;
-        }
-
-        .quiz-question {
-            margin-bottom: 25px;
-        }
-
-        .quiz-question h3 {
-            color: var(--primary);
-            font-size: 1.2rem;
-            line-height: 1.5;
-        }
-
-        .quiz-options {
-            display: grid;
-            gap: 12px;
-            margin: 20px 0;
-        }
-
-        .quiz-option {
-            padding: 15px 20px;
-            background: var(--gray-200);
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: all 0.3s;
-            border: 2px solid transparent;
-            word-break: break-word;
-        }
-        .quiz-option:hover {
-            background: var(--gray-300);
-        }
-        .quiz-option.selected {
-            border-color: var(--accent);
-            background: rgba(47,191,113,0.1);
-        }
-        .quiz-option.correct {
-            background: var(--accent);
-            color: white;
-        }
-        .quiz-option.wrong {
-            background: #ff4444;
-            color: white;
-        }
-
-        .quiz-navigation {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 30px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-        
-        #questionCounter {
-            font-weight: 600;
-            color: var(--primary);
-        }
-
-        /* Dashboard */
-        .dashboard {
-            background: white;
-            border-radius: var(--radius-xl);
-            padding: 30px 20px;
-            margin: 30px 0;
-        }
-
-        .progress-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin: 25px 0;
-        }
-
-        .stat-card {
-            background: var(--gray-200);
-            padding: 20px 15px;
-            border-radius: var(--radius-lg);
-            text-align: center;
-        }
-        .stat-card .number {
-            font-size: clamp(1.8rem, 4vw, 2.5rem);
-            font-weight: 800;
-            color: var(--accent);
-            line-height: 1.2;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: var(--gray-300);
-            border-radius: 4px;
-            margin: 8px 0;
-        }
-        .progress-fill {
-            height: 100%;
-            background: var(--accent);
-            border-radius: 4px;
-            transition: width 0.3s;
-        }
-
-        /* Pricing */
-        .pricing-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-
-        .pricing-card {
-            background: white;
-            border-radius: var(--radius-xl);
-            padding: 30px 25px;
-            box-shadow: var(--shadow-sm);
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-            height: 100%;
-        }
-        .pricing-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
-        }
-        .pricing-card.featured {
-            border: 2px solid var(--accent);
-        }
-        .pricing-card .price {
-            font-size: clamp(1.8rem, 4vw, 2.5rem);
-            font-weight: 800;
-            color: var(--primary);
-            margin: 15px 0;
-        }
-        .pricing-card .price small {
-            font-size: 1rem;
-            font-weight: 400;
-            color: var(--gray-600);
-        }
-        .pricing-card .features {
-            list-style: none;
-            margin: 20px 0;
-        }
-        .pricing-card .features li {
-            margin: 12px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        /* Library Section */
-        .library-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            margin: 25px 0;
-        }
-
-        .library-item {
-            background: white;
-            border-radius: var(--radius-lg);
-            padding: 25px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            border: 2px solid transparent;
-            height: 100%;
-        }
-        .library-item:hover {
-            border-color: var(--accent);
-            transform: translateY(-3px);
-        }
-        .library-item i {
-            font-size: 2.5rem;
-            color: var(--accent);
-            margin-bottom: 12px;
-        }
-
-        /* Stats section */
-        .stats-section {
-            background: linear-gradient(135deg, var(--primary), var(--primary-light));
-            border-radius: var(--radius-xl);
-            padding: 40px 25px;
-            color: white;
-            text-align: center;
-            margin: 40px 0;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-            gap: 25px;
-        }
-        
-        .stat-item .number {
-            font-size: clamp(2rem, 5vw, 3rem);
-            font-weight: 800;
-            line-height: 1.2;
-        }
-
-        /* Modal Styles */
-        .video-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.95);
-            z-index: 10000;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .video-modal.active {
-            display: flex;
-        }
-        .modal-content {
-            background: white;
-            border-radius: 20px;
-            padding: 25px;
-            max-width: 900px;
-            width: 100%;
-            position: relative;
-        }
-        .close-modal {
-            position: absolute;
-            top: -15px;
-            right: -15px;
-            width: 40px;
-            height: 40px;
-            background: var(--accent);
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            cursor: pointer;
-            border: none;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        }
-        .modal-video-container {
-            position: relative;
-            padding-bottom: 56.25%;
-            height: 0;
-            margin-top: 15px;
-        }
-        .modal-video-container iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border-radius: 12px;
-        }
-
-        /* Footer */
-        .footer {
-            background: var(--primary);
-            color: white;
-            padding: 50px 0 25px;
-            margin-top: 60px;
-        }
-
-        .footer-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-
-        .footer-links a {
-            color: var(--gray-400);
-            text-decoration: none;
-            display: block;
-            margin: 8px 0;
-            transition: color 0.3s;
-            cursor: pointer;
-        }
-        .footer-links a:hover {
-            color: var(--accent);
-        }
-
-        .copyright {
-            text-align: center;
-            padding-top: 25px;
-            border-top: 1px solid var(--gray-700);
-            color: var(--gray-500);
-            font-size: 0.9rem;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 992px) {
-            .nav-links {
-                gap: 1rem;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .mobile-menu-btn {
-                display: block;
-            }
-            
-            .nav-links {
-                display: none;
-                position: fixed;
-                top: 70px;
-                left: 0;
-                width: 100%;
-                background: var(--primary);
-                flex-direction: column;
-                padding: 20px;
-                gap: 15px;
-                box-shadow: var(--shadow-lg);
-                z-index: 999;
-                border-top: 1px solid rgba(255,255,255,0.1);
-            }
-            
-            .nav-links.show {
-                display: flex;
-            }
-            
-            .nav-links a {
-                width: 100%;
-                text-align: center;
-                padding: 12px;
-                border-radius: var(--radius-md);
-            }
-            
-            .nav-links a:hover {
-                background: rgba(255,255,255,0.1);
-            }
-            
-            .nav-links a.active-nav {
-                border-bottom: none;
-                background: var(--accent);
-                color: var(--primary);
-            }
-            
-            .nav-links .btn {
-                width: 100%;
-                margin-top: 10px;
-            }
-            
-            .hero-buttons {
-                flex-direction: column;
-            }
-            
-            .hero-buttons .btn {
-                width: 100%;
-            }
-            
-            .video-tabs {
-                justify-content: center;
-            }
-            
-            .quiz-tabs {
-                flex-direction: column;
-            }
-            
-            .quiz-tabs .btn {
-                width: 100%;
-            }
-            
-            .quiz-navigation {
-                flex-direction: column;
-            }
-            
-            .quiz-navigation button {
-                width: 100%;
-            }
-            
-            .close-modal {
-                top: -10px;
-                right: -10px;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .container {
-                padding: 0 15px;
-            }
-            
-            .logo {
-                font-size: 1.5rem;
-            }
-            
-            .feature-card {
-                padding: 20px 15px;
-            }
-            
-            .course-meta {
-                flex-direction: column;
-                gap: 5px;
-            }
-            
-            .shorts-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .library-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-        }
-    </style>
+    
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('✅ Service Worker registered:', reg.scope))
+                    .catch(err => console.log('❌ Service Worker error:', err));
+            });
+        }
+    </script>
 </head>
 <body>
     <!-- Video Modal -->
-    <div id="videoModal" class="video-modal">
-        <div class="modal-content">
-            <button class="close-modal" onclick="closeVideoModal()">&times;</button>
-            <h3 id="modalVideoTitle" style="color: var(--primary);">Video player</h3>
+    <div id="videoModal" class="modal video-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalVideoTitle">
+            <button class="modal-close" onclick="closeVideoModal()" aria-label="Yopish">&times;</button>
+            <h3 id="modalVideoTitle" class="modal-title">Video player</h3>
             <div class="modal-video-container">
-                <iframe id="modalVideoIframe" src="" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                <iframe id="modalVideoIframe" src="" frameborder="0" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Video player"></iframe>
             </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal login-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+            <button class="modal-close" onclick="closeLoginModal()" aria-label="Yopish">&times;</button>
+            <h3 id="loginModalTitle" class="modal-title">Kirish</h3>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" placeholder="email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Parol</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Kirish</button>
+            </form>
+            <p class="modal-footer">
+                Hisobingiz yo'qmi? <a href="#" onclick="showRegister()">Ro'yxatdan o'tish</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div id="registerModal" class="modal register-modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="registerModalTitle">
+            <button class="modal-close" onclick="closeRegisterModal()" aria-label="Yopish">&times;</button>
+            <h3 id="registerModalTitle" class="modal-title">Ro'yxatdan o'tish</h3>
+            <form id="registerForm" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="registerName">Ism</label>
+                    <input type="text" id="registerName" placeholder="Ismingiz" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" placeholder="email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerPassword">Parol</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerRole">Siz kimsiz?</label>
+                    <select id="registerRole" required>
+                        <option value="student">👨‍🎓 Talaba</option>
+                        <option value="doctor">👨‍⚕️ Shifokor</option>
+                        <option value="teacher">👩‍🏫 O'qituvchi</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Ro'yxatdan o'tish</button>
+            </form>
+            <p class="modal-footer">
+                Hisobingiz bormi? <a href="#" onclick="showLogin()">Kirish</a>
+            </p>
         </div>
     </div>
 
     <!-- Header -->
     <header class="header">
         <div class="container">
-            <nav class="nav">
-                <a href="#" class="logo" onclick="showSection('home'); return false;">MED<span>FLOW</span></a>
-                <div class="nav-links" id="navLinks">
-                    <a onclick="showSection('home')" class="active-nav">Home</a>
-                    <a onclick="showSection('courses')">Courses</a>
-                    <a onclick="showSection('videos')">Videos</a>
-                    <a onclick="showSection('library')">Library</a>
-                    <a onclick="showSection('quiz')">Tests</a>
-                    <a onclick="showSection('dashboard')">Dashboard</a>
-                    <a onclick="showSection('pricing')">Pricing</a>
-                    <a href="#" class="btn btn-primary" onclick="alert('Login demo'); return false;"><i class="fas fa-sign-in-alt"></i> Login</a>
-                </div>
-                <div class="mobile-menu-btn" onclick="toggleMobileMenu()">
-                    <i class="fas fa-bars"></i>
-                </div>
+            <nav class="nav" aria-label="Asosiy navigatsiya">
+                <a href="/" class="logo" onclick="showSection('home'); return false;" aria-label="MEDFLOW bosh sahifa">
+                    MED<span>FLOW</span>
+                </a>
+                
+                <button class="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menyu" aria-expanded="false">
+                    <i class="fas fa-bars" aria-hidden="true"></i>
+                </button>
+                
+                <ul class="nav-links" id="navLinks" role="list">
+                    <li role="listitem"><a onclick="showSection('home')" class="active-nav" role="button">Home</a></li>
+                    <li role="listitem"><a onclick="showSection('courses')" role="button">Courses</a></li>
+                    <li role="listitem"><a onclick="showSection('videos')" role="button">Videos</a></li>
+                    <li role="listitem"><a onclick="showSection('library')" role="button">Library</a></li>
+                    <li role="listitem"><a onclick="showSection('quiz')" role="button">Tests</a></li>
+                    <li role="listitem"><a onclick="showSection('dashboard')" role="button">Dashboard</a></li>
+                    <li role="listitem"><a onclick="showSection('pricing')" role="button">Pricing</a></li>
+                    <li role="listitem">
+                        <button class="btn btn-primary" onclick="showLoginModal()">
+                            <i class="fas fa-sign-in-alt" aria-hidden="true"></i> Login
+                        </button>
+                    </li>
+                </ul>
             </nav>
         </div>
     </header>
 
-    <!-- HOME SECTION -->
-    <section id="home" class="section active">
-        <!-- Hero -->
-        <div class="hero">
+    <main>
+        <!-- HOME SECTION -->
+        <section id="home" class="section active" aria-labelledby="home-title">
+            <!-- Hero -->
+            <div class="hero">
+                <div class="container">
+                    <div class="hero-content">
+                        <h1 id="home-title">From Complexity to Clinical Clarity in 60 Seconds</h1>
+                        <p>Tibbiyot talabalari va shifokorlar uchun microlearning platformasi. Murakkab tibbiy bilimlar endi qisqa va tushunarli formatda.</p>
+                        <div class="hero-buttons">
+                            <button class="btn btn-primary" onclick="showSection('courses')">
+                                <i class="fas fa-play-circle" aria-hidden="true"></i> Start Learning
+                            </button>
+                            <button class="btn btn-outline" onclick="playDemo()">
+                                <i class="fas fa-video" aria-hidden="true"></i> Watch Demo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="container">
-                <div class="hero-content">
-                    <h1>From Complexity to Clinical Clarity in 60 Seconds</h1>
-                    <p>Tibbiyot talabalari va shifokorlar uchun microlearning platformasi. Murakkab tibbiy bilimlar endi qisqa va tushunarli formatda.</p>
-                    <div class="hero-buttons">
-                        <a href="#" class="btn btn-primary" onclick="showSection('courses'); return false;"><i class="fas fa-play-circle"></i> Start Learning</a>
-                        <a href="#" class="btn btn-outline" onclick="playDemo(); return false;"><i class="fas fa-video"></i> Watch Demo</a>
+                <!-- Features -->
+                <h2 class="section-title">Nima uchun MEDFLOW?</h2>
+                <div class="features-grid" id="featuresGrid"></div>
+
+                <!-- Stats -->
+                <div class="stats-section">
+                    <div class="stats-grid" id="statsGrid"></div>
+                </div>
+
+                <!-- Preview Courses -->
+                <h2>Mashhur kurslar</h2>
+                <div class="courses-grid" id="previewCourses"></div>
+            </div>
+        </section>
+
+        <!-- COURSES SECTION -->
+        <section id="courses" class="section" aria-labelledby="courses-title">
+            <div class="container">
+                <h2 id="courses-title" class="section-title">Barcha kurslar</h2>
+                <div class="courses-grid" id="coursesGrid"></div>
+            </div>
+        </section>
+
+        <!-- VIDEOS SECTION -->
+        <section id="videos" class="section" aria-labelledby="videos-title">
+            <div class="container">
+                <div class="video-section">
+                    <h2 id="videos-title">Video darslar</h2>
+                    <div class="video-tabs" role="tablist">
+                        <button class="video-tab active" onclick="filterVideos('shorts', this)" role="tab" aria-selected="true">Shorts (30-60 sec)</button>
+                        <button class="video-tab" onclick="filterVideos('lectures', this)" role="tab" aria-selected="false">Lectures (5-15 min)</button>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="container">
-            <!-- Features -->
-            <h2 class="section-title">Nima uchun MEDFLOW?</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-bolt"></i></div>
-                    <h3>Microlearning</h3>
-                    <p>30-60 soniyalik videolar bilan tez va samarali o'rganish</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-robot"></i></div>
-                    <h3>AI Recommendations</h3>
-                    <p>Sizning zaif joylaringizni aniqlab, shaxsiy tavsiyalar beradi</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-                    <h3>Progress Tracking</h3>
-                    <p>O'z taraqqiyotingizni kuzatib boring</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-brain"></i></div>
-                    <h3>Spaced Repetition</h3>
-                    <p>Ma'lumotlarni uzoq muddatli xotiraga joylash</p>
-                </div>
-            </div>
-
-            <!-- Stats -->
-            <div class="stats-section">
-                <div class="stats-grid">
-                    <div class="stat-item"><div class="number">120K</div><div>Students</div></div>
-                    <div class="stat-item"><div class="number">500K</div><div>Videos watched</div></div>
-                    <div class="stat-item"><div class="number">98%</div><div>Satisfaction</div></div>
-                </div>
-            </div>
-
-            <!-- Preview Courses -->
-            <h2>Mashhur kurslar</h2>
-            <div class="courses-grid">
-                <div class="course-card" onclick="showSection('courses')">
-                    <div class="course-image" style="background-image: url('https://images.unsplash.com/photo-1579165466741-7f35e4755660?w=400&q=80')"></div>
-                    <div class="course-content">
-                        <span class="course-category">Anatomy</span>
-                        <h3>Anatomiya</h3>
-                        <div class="course-meta"><span><i class="fas fa-video"></i> 24 videos</span></div>
+                    
+                    <div class="video-player">
+                        <iframe src="https://www.youtube.com/embed/TiSpjfuQxXM" title="MEDFLOW demo" allowfullscreen loading="lazy"></iframe>
                     </div>
+
+                    <div id="videosGrid" class="shorts-grid"></div>
                 </div>
-                <div class="course-card" onclick="showSection('courses')">
-                    <div class="course-image" style="background-image: url('https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=400&q=80')"></div>
-                    <div class="course-content">
-                        <span class="course-category">Cardiology</span>
-                        <h3>Kardiologiya</h3>
-                        <div class="course-meta"><span><i class="fas fa-video"></i> 28 videos</span></div>
+            </div>
+        </section>
+
+        <!-- LIBRARY SECTION -->
+        <section id="library" class="section" aria-labelledby="library-title">
+            <div class="container">
+                <h2 id="library-title" class="section-title">Medical Library</h2>
+                <div class="library-grid" id="libraryGrid"></div>
+            </div>
+        </section>
+
+        <!-- QUIZ SECTION -->
+        <section id="quiz" class="section" aria-labelledby="quiz-title">
+            <div class="container">
+                <div class="quiz-container">
+                    <h2 id="quiz-title">Test Center</h2>
+                    <div class="quiz-tabs" role="tablist">
+                        <button class="btn btn-outline" onclick="loadQuiz('anatomy', this)" role="tab">Anatomy</button>
+                        <button class="btn btn-outline" onclick="loadQuiz('cardiology', this)" role="tab">Cardiology</button>
+                        <button class="btn btn-outline" onclick="loadQuiz('pharma', this)" role="tab">Pharmacology</button>
                     </div>
+                    
+                    <div id="quizContent" class="quiz-content"></div>
+                    
+                    <div class="quiz-navigation">
+                        <button class="btn btn-outline" onclick="prevQuestion()" id="prevBtn">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Oldingi
+                        </button>
+                        <span id="questionCounter" class="question-counter">1 / 5</span>
+                        <button class="btn btn-primary" onclick="nextQuestion()" id="nextBtn">
+                            Keyingi <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="quizResult" class="quiz-result" aria-live="polite"></div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- COURSES SECTION -->
-    <section id="courses" class="section">
-        <div class="container">
-            <h2 class="section-title">Barcha kurslar</h2>
-            <div class="courses-grid" id="coursesGrid"></div>
-        </div>
-    </section>
-
-    <!-- VIDEOS SECTION -->
-    <section id="videos" class="section">
-        <div class="container">
-            <div class="video-section">
-                <h2>Video darslar</h2>
-                <div class="video-tabs">
-                    <div class="video-tab active" onclick="filterVideos('shorts', this)">Shorts (30-60 sec)</div>
-                    <div class="video-tab" onclick="filterVideos('lectures', this)">Lectures (5-15 min)</div>
-                </div>
-                
-                <div class="video-player">
-                    <iframe src="https://www.youtube.com/embed/TiSpjfuQxXM" title="MEDFLOW demo" allowfullscreen></iframe>
-                </div>
-
-                <div id="videosGrid" class="shorts-grid"></div>
-            </div>
-        </div>
-    </section>
-
-    <!-- LIBRARY SECTION -->
-    <section id="library" class="section">
-        <div class="container">
-            <h2 class="section-title">Medical Library</h2>
-            <div class="library-grid">
-                <div class="library-item" onclick="openPDF('anatomy')">
-                    <i class="fas fa-book"></i>
-                    <h3>Anatomy Atlas</h3>
-                    <p>PDF, 45 pages</p>
-                </div>
-                <div class="library-item" onclick="openPDF('guidelines')">
-                    <i class="fas fa-file-pdf"></i>
-                    <h3>Clinical Guidelines 2026</h3>
-                    <p>WHO protocols</p>
-                </div>
-                <div class="library-item" onclick="openPDF('pharma')">
-                    <i class="fas fa-capsules"></i>
-                    <h3>Pharmacology Handbook</h3>
-                    <p>PDF, 120 pages</p>
-                </div>
-                <div class="library-item" onclick="openPDF('surgery')">
-                    <i class="fas fa-scalpel"></i>
-                    <h3>Surgical Techniques</h3>
-                    <p>Video + PDF</p>
-                </div>
-                <div class="library-item" onclick="openPDF('research')">
-                    <i class="fas fa-flask"></i>
-                    <h3>Research Papers</h3>
-                    <p>Latest studies</p>
-                </div>
-                <div class="library-item" onclick="openPDF('case')">
-                    <i class="fas fa-notes-medical"></i>
-                    <h3>Clinical Cases</h3>
-                    <p>50+ cases</p>
+        <!-- DASHBOARD SECTION -->
+        <section id="dashboard" class="section" aria-labelledby="dashboard-title">
+            <div class="container">
+                <div class="dashboard">
+                    <h2 id="dashboard-title">Mening dashboard</h2>
+                    <div class="progress-stats" id="dashboardStats"></div>
+                    <div id="dashboardContent" class="dashboard-content"></div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- QUIZ SECTION -->
-    <section id="quiz" class="section">
-        <div class="container">
-            <div class="quiz-container">
-                <h2>Test Center</h2>
-                <div class="quiz-tabs">
-                    <button class="btn btn-outline" onclick="loadQuiz('anatomy', this)">Anatomy</button>
-                    <button class="btn btn-outline" onclick="loadQuiz('cardiology', this)">Cardiology</button>
-                    <button class="btn btn-outline" onclick="loadQuiz('pharma', this)">Pharmacology</button>
-                </div>
-                
-                <div id="quizContent"></div>
-                
-                <div class="quiz-navigation">
-                    <button class="btn btn-outline" onclick="prevQuestion()"><i class="fas fa-arrow-left"></i> Oldingi</button>
-                    <span id="questionCounter">1 / 5</span>
-                    <button class="btn btn-primary" onclick="nextQuestion()">Keyingi <i class="fas fa-arrow-right"></i></button>
-                </div>
+        <!-- PRICING SECTION -->
+        <section id="pricing" class="section" aria-labelledby="pricing-title">
+            <div class="container">
+                <h2 id="pricing-title" class="section-title">Tarif rejalari</h2>
+                <div class="pricing-grid" id="pricingGrid"></div>
             </div>
-        </div>
-    </section>
-
-    <!-- DASHBOARD SECTION -->
-    <section id="dashboard" class="section">
-        <div class="container">
-            <div class="dashboard">
-                <h2>Mening dashboard</h2>
-                <div class="progress-stats" id="dashboardStats"></div>
-                <div id="dashboardContent"></div>
-            </div>
-        </div>
-    </section>
-
-    <!-- PRICING SECTION -->
-    <section id="pricing" class="section">
-        <div class="container">
-            <h2 class="section-title">Tarif rejalari</h2>
-            <div class="pricing-grid" id="pricingGrid"></div>
-        </div>
-    </section>
+        </section>
+    </main>
 
     <!-- FOOTER -->
     <footer class="footer">
         <div class="container">
             <div class="footer-grid">
-                <div>
-                    <h3 style="color: var(--accent); margin-bottom: 15px;">MEDFLOW</h3>
+                <div class="footer-brand">
+                    <h3 class="footer-logo">MED<span>FLOW</span></h3>
                     <p>Tibbiyot ta'limining yangi avlodi</p>
                 </div>
+                
                 <div class="footer-links">
                     <h4>Platforma</h4>
-                    <a onclick="showSection('courses'); closeMobileMenu()">Courses</a>
-                    <a onclick="showSection('videos'); closeMobileMenu()">Videos</a>
-                    <a onclick="showSection('library'); closeMobileMenu()">Library</a>
+                    <ul>
+                        <li><a onclick="showSection('courses'); closeMobileMenu()">Courses</a></li>
+                        <li><a onclick="showSection('videos'); closeMobileMenu()">Videos</a></li>
+                        <li><a onclick="showSection('library'); closeMobileMenu()">Library</a></li>
+                    </ul>
                 </div>
+                
                 <div class="footer-links">
                     <h4>Qo'llab-quvvatlash</h4>
-                    <a href="#" onclick="alert('FAQ sahifasi'); return false;">FAQ</a>
-                    <a href="#" onclick="alert('Contact sahifasi'); return false;">Contact</a>
+                    <ul>
+                        <li><a href="#" onclick="showFAQ(); return false;">FAQ</a></li>
+                        <li><a href="#" onclick="showContact(); return false;">Contact</a></li>
+                        <li><a href="#" onclick="showPrivacy(); return false;">Privacy</a></li>
+                    </ul>
                 </div>
+                
                 <div class="footer-links">
                     <h4>Ijtimoiy tarmoqlar</h4>
-                    <a href="#"><i class="fab fa-telegram"></i> Telegram</a>
-                    <a href="#"><i class="fab fa-instagram"></i> Instagram</a>
+                    <ul class="social-links">
+                        <li><a href="https://t.me/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram" aria-hidden="true"></i> Telegram</a></li>
+                        <li><a href="https://instagram.com/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-instagram" aria-hidden="true"></i> Instagram</a></li>
+                        <li><a href="https://youtube.com/medflow" target="_blank" rel="noopener noreferrer"><i class="fab fa-youtube" aria-hidden="true"></i> YouTube</a></li>
+                    </ul>
                 </div>
             </div>
-            <div class="copyright">© 2026 MEDFLOW. Barcha huquqlar himoyalangan.</div>
+            
+            <div class="footer-bottom">
+                <div class="copyright">
+                    © <span id="currentYear">2026</span> MEDFLOW. Barcha huquqlar himoyalangan.
+                </div>
+                <div class="footer-badges">
+                    <span class="badge">🚀 MVP Version 1.0</span>
+                    <span class="badge">🩺 For Medical Education</span>
+                </div>
+            </div>
         </div>
     </footer>
 
-    <script>
-        // Data - BARCHA LINKLAR TO'G'RI
-        const courses = [
-            { name: 'Anatomiya', category: 'Anatomy', videos: 24, tests: 120, image: 'https://images.unsplash.com/photo-1579165466741-7f35e4755660?w=400&q=80' },
-            { name: 'Fiziologiya', category: 'Physiology', videos: 32, tests: 150, image: 'https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=400&q=80' },
-            { name: 'Farmakologiya', category: 'Pharmacology', videos: 45, tests: 200, image: 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=400&q=80' },
-            { name: 'Kardiologiya', category: 'Cardiology', videos: 28, tests: 140, image: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=400&q=80' },
-            { name: 'Xirurgiya', category: 'Surgery', videos: 36, tests: 180, image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&q=80' },
-            { name: 'Nevrologiya', category: 'Neurology', videos: 22, tests: 110, image: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=400&q=80' }
-        ];
-
-        const videos = {
-            shorts: [
-                { 
-                    title: 'Otitis media - 60s', 
-                    duration: '60 sec', 
-                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80', 
-                    videoUrl: 'https://www.youtube.com/embed/TiSpjfuQxXM',
-                    description: 'Otitis media etiology, symptoms, treatment in 60 seconds' 
-                },
-                { 
-                    title: 'Myocardial infarction', 
-                    duration: '55 sec', 
-                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/3JZ_D3ELwOQ',
-                    description: 'Heart attack signs, symptoms and emergency management' 
-                },
-                { 
-                    title: 'Pneumonia', 
-                    duration: '45 sec', 
-                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/FjYjsftnFwA',
-                    description: 'Pneumonia types, causes and treatment' 
-                },
-                { 
-                    title: 'Diabetes mellitus', 
-                    duration: '60 sec', 
-                    image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/Xl9m7N5q_Sc',
-                    description: 'Diabetes types, symptoms and management' 
-                },
-                { 
-                    title: 'Hypertension', 
-                    duration: '50 sec', 
-                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/gK7sR0EfRkM',
-                    description: 'High blood pressure causes and treatment' 
-                },
-                { 
-                    title: 'Asthma', 
-                    duration: '55 sec', 
-                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/P2pBzN0nz9U',
-                    description: 'Asthma symptoms, triggers and medications' 
-                }
-            ],
-            lectures: [
-                { 
-                    title: 'Heart failure', 
-                    duration: '12 min', 
-                    image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/0VqT8cF7Q1k',
-                    description: 'Heart failure pathophysiology and management' 
-                },
-                { 
-                    title: 'Renal system', 
-                    duration: '15 min', 
-                    image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/-lZpvAHdtjM',
-                    description: 'Kidney diseases and renal disorders' 
-                },
-                { 
-                    title: 'Liver diseases', 
-                    duration: '18 min', 
-                    image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
-                    videoUrl: 'https://www.youtube.com/embed/6h9xIx9aZ_Y',
-                    description: 'Hepatitis, cirrhosis and liver disorders' 
-                }
-            ]
-        };
-
-        const quizzes = {
-            anatomy: [
-                { question: "Which bone is known as the 'shoulder blade'?", options: ["Clavicle", "Scapula", "Humerus", "Sternum"], correct: 1 },
-                { question: "How many bones are in the adult human body?", options: ["206", "208", "210", "204"], correct: 0 },
-                { question: "Which is the longest bone in the human body?", options: ["Femur", "Tibia", "Humerus", "Fibula"], correct: 0 },
-                { question: "What is the smallest bone in the body?", options: ["Stapes", "Incus", "Malleus", "Hyoid"], correct: 0 },
-                { question: "How many vertebrae are in the spinal column?", options: ["33", "30", "26", "24"], correct: 0 }
-            ],
-            cardiology: [
-                { question: "Which chamber pumps blood to the body?", options: ["Right atrium", "Left atrium", "Right ventricle", "Left ventricle"], correct: 3 },
-                { question: "What is normal adult heart rate?", options: ["40-50", "60-100", "100-120", "120-140"], correct: 1 },
-                { question: "Which artery is most commonly blocked?", options: ["LAD", "RCA", "LCX", "PDA"], correct: 0 },
-                { question: "What does ECG stand for?", options: ["Electrocardiogram", "Echo", "Electrogram", "Cardiogram"], correct: 0 },
-                { question: "Which valve is between left atrium and ventricle?", options: ["Aortic", "Mitral", "Tricuspid", "Pulmonary"], correct: 1 }
-            ],
-            pharma: [
-                { question: "Which drug is used for hypertension?", options: ["Lisinopril", "Ibuprofen", "Amoxicillin", "Omeprazole"], correct: 0 },
-                { question: "What class is Metformin?", options: ["Biguanide", "Sulfonylurea", "DPP-4", "SGLT2"], correct: 0 },
-                { question: "Which is a beta-blocker?", options: ["Metoprolol", "Amlodipine", "Losartan", "HCTZ"], correct: 0 },
-                { question: "What does Warfarin do?", options: ["Anticoagulant", "Antiplatelet", "Thrombolytic", "Analgesic"], correct: 0 },
-                { question: "Which antibiotic covers MRSA?", options: ["Vancomycin", "Penicillin", "Ciprofloxacin", "Doxycycline"], correct: 0 }
-            ]
-        };
-
-        // State
-        let currentSection = 'home';
-        let currentQuiz = quizzes.anatomy;
-        let currentQuestion = 0;
-        let userAnswers = [];
-        let currentVideoType = 'shorts';
-
-        // Mobile menu
-        function toggleMobileMenu() {
-            const navLinks = document.getElementById('navLinks');
-            navLinks.classList.toggle('show');
-        }
-        
-        function closeMobileMenu() {
-            const navLinks = document.getElementById('navLinks');
-            navLinks.classList.remove('show');
-        }
-
-        // Navigation
-        function showSection(sectionId) {
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            document.getElementById(sectionId).classList.add('active');
-            
-            document.querySelectorAll('.nav-links a').forEach(a => {
-                a.classList.remove('active-nav');
-                if (a.textContent.trim().toLowerCase().includes(sectionId.toLowerCase()) || 
-                    (sectionId === 'home' && a.textContent.trim() === 'Home')) {
-                    a.classList.add('active-nav');
-                }
-            });
-            
-            currentSection = sectionId;
-            closeMobileMenu();
-            
-            if (sectionId === 'courses') loadCourses();
-            if (sectionId === 'videos') loadVideos('shorts');
-            if (sectionId === 'quiz') loadQuiz('anatomy', document.querySelector('.quiz-tabs .btn'));
-            if (sectionId === 'dashboard') loadDashboard();
-            if (sectionId === 'pricing') loadPricing();
-        }
-
-        // Load Courses
-        function loadCourses() {
-            const grid = document.getElementById('coursesGrid');
-            if (!grid) return;
-            
-            grid.innerHTML = courses.map(course => `
-                <div class="course-card" onclick="openCourse('${course.name}')">
-                    <div class="course-image" style="background-image: url('${course.image}')"></div>
-                    <div class="course-content">
-                        <span class="course-category">${course.category}</span>
-                        <h3>${course.name}</h3>
-                        <div class="course-meta">
-                            <span><i class="fas fa-video"></i> ${course.videos} videos</span>
-                            <span><i class="fas fa-question-circle"></i> ${course.tests} tests</span>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Load Videos
-        function loadVideos(type) {
-            currentVideoType = type;
-            const grid = document.getElementById('videosGrid');
-            if (!grid) return;
-            
-            const videoList = type === 'shorts' ? videos.shorts : videos.lectures;
-            
-            grid.innerHTML = videoList.map(v => `
-                <div class="short-item" style="background-image: url('${v.image}')" onclick="playVideo('${v.title}', '${v.videoUrl}')">
-                    <i class="fas fa-play-circle" style="font-size: 2rem;"></i>
-                    <strong>${v.title}</strong>
-                    <small>${v.duration}</small>
-                </div>
-            `).join('');
-        }
-
-        function filterVideos(type, element) {
-            document.querySelectorAll('.video-tab').forEach(t => t.classList.remove('active'));
-            element.classList.add('active');
-            loadVideos(type);
-        }
-
-        // Video play function - TO'G'RI VERSION
-        function playVideo(title, videoUrl) {
-            document.getElementById('modalVideoTitle').textContent = title;
-            document.getElementById('modalVideoIframe').src = videoUrl + '?autoplay=1';
-            document.getElementById('videoModal').classList.add('active');
-        }
-
-        function closeVideoModal() {
-            document.getElementById('videoModal').classList.remove('active');
-            document.getElementById('modalVideoIframe').src = '';
-        }
-
-        function playDemo() {
-            playVideo('MEDFLOW Demo', 'https://www.youtube.com/embed/TiSpjfuQxXM');
-        }
-
-        // Quiz functions
-        function loadQuiz(topic, element) {
-            if (!quizzes[topic]) return;
-            
-            currentQuiz = quizzes[topic];
-            currentQuestion = 0;
-            userAnswers = new Array(currentQuiz.length).fill(null);
-            
-            if (element) {
-                document.querySelectorAll('.quiz-tabs .btn').forEach(btn => {
-                    btn.classList.remove('btn-primary');
-                    btn.classList.add('btn-outline');
-                });
-                element.classList.remove('btn-outline');
-                element.classList.add('btn-primary');
-            }
-            
-            displayQuestion();
-        }
-
-        function displayQuestion() {
-            if (!currentQuiz || !currentQuiz[currentQuestion]) return;
-            
-            const q = currentQuiz[currentQuestion];
-            const content = document.getElementById('quizContent');
-            if (!content) return;
-            
-            content.innerHTML = `
-                <div class="quiz-question">
-                    <h3>${currentQuestion + 1}. ${q.question}</h3>
-                </div>
-                <div class="quiz-options">
-                    ${q.options.map((opt, idx) => `
-                        <div class="quiz-option ${userAnswers[currentQuestion] === idx ? 'selected' : ''}" 
-                             onclick="selectAnswer(${idx})">
-                            ${String.fromCharCode(65 + idx)}. ${opt}
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            
-            document.getElementById('questionCounter').textContent = `${currentQuestion + 1} / ${currentQuiz.length}`;
-        }
-
-        function selectAnswer(idx) {
-            userAnswers[currentQuestion] = idx;
-            displayQuestion();
-        }
-
-        function nextQuestion() {
-            if (currentQuestion < currentQuiz.length - 1) {
-                currentQuestion++;
-                displayQuestion();
-            }
-        }
-
-        function prevQuestion() {
-            if (currentQuestion > 0) {
-                currentQuestion--;
-                displayQuestion();
-            }
-        }
-
-        // Load Dashboard
-        function loadDashboard() {
-            const stats = document.getElementById('dashboardStats');
-            const content = document.getElementById('dashboardContent');
-            
-            if (stats) {
-                stats.innerHTML = `
-                    <div class="stat-card"><div class="number">24</div><div>Videos watched</div></div>
-                    <div class="stat-card"><div class="number">12</div><div>Tests passed</div></div>
-                    <div class="stat-card"><div class="number">85%</div><div>Average score</div></div>
-                    <div class="stat-card"><div class="number">7</div><div>Day streak</div></div>
-                `;
-            }
-            
-            if (content) {
-                content.innerHTML = `
-                    <h3>Zaif mavzular</h3>
-                    <div style="margin: 20px 0;">
-                        <div>Farmakologiya <span style="float: right;">65%</span></div>
-                        <div class="progress-bar"><div class="progress-fill" style="width: 65%;"></div></div>
-                        <div style="margin-top: 15px;">Kardiologiya <span style="float: right;">80%</span></div>
-                        <div class="progress-bar"><div class="progress-fill" style="width: 80%;"></div></div>
-                        <div style="margin-top: 15px;">Nevrologiya <span style="float: right;">45%</span></div>
-                        <div class="progress-bar"><div class="progress-fill" style="width: 45%;"></div></div>
-                    </div>
-                    <h3>Sizga tavsiya</h3>
-                    <div class="shorts-grid">
-                        <div class="short-item" style="background: var(--accent); color: white;" onclick="showSection('videos')">
-                            <i class="fas fa-brain"></i> Nevrologiya asoslari
-                        </div>
-                        <div class="short-item" style="background: var(--primary); color: white;" onclick="showSection('videos')">
-                            <i class="fas fa-pills"></i> Beta blokatorlar
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        // Load Pricing
-        function loadPricing() {
-            const grid = document.getElementById('pricingGrid');
-            if (!grid) return;
-            
-            grid.innerHTML = `
-                <div class="pricing-card">
-                    <h3>Free</h3>
-                    <div class="price">0 so'm</div>
-                    <ul class="features">
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Shorts videolar</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Cheklangan testlar</li>
-                        <li><i class="fas fa-times" style="color: #ff4444;"></i> To'liq ma'ruzalar</li>
-                    </ul>
-                    <a href="#" class="btn btn-outline" style="width: 100%;" onclick="alert('Free rejaga o\'tish'); return false;">Boshlash</a>
-                </div>
-                <div class="pricing-card featured">
-                    <h3>Student Premium</h3>
-                    <div class="price">45,000 so'm <small>/oy</small></div>
-                    <ul class="features">
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Barcha videolar</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> To'liq ma'ruzalar</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Cheksiz testlar</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Flashkartalar</li>
-                    </ul>
-                    <a href="#" class="btn btn-primary" style="width: 100%;" onclick="alert('Premium rejaga o\'tish'); return false;">Tanlash</a>
-                </div>
-                <div class="pricing-card">
-                    <h3>Doctor Pro</h3>
-                    <div class="price">120,000 so'm <small>/oy</small></div>
-                    <ul class="features">
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Barcha Premium</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> Klinik holatlar</li>
-                        <li><i class="fas fa-check" style="color: var(--accent);"></i> WHO qo'llanmalar</li>
-                    </ul>
-                    <a href="#" class="btn btn-outline" style="width: 100%;" onclick="alert('Pro rejaga o\'tish'); return false;">Tanlash</a>
-                </div>
-            `;
-        }
-
-        // Library
-        function openPDF(type) {
-            let url = '';
-            switch(type) {
-                case 'anatomy':
-                    url = 'https://www.kenhub.com/en/library/anatomy';
-                    break;
-                case 'guidelines':
-                    url = 'https://www.who.int/publications/guidelines';
-                    break;
-                case 'pharma':
-                    url = 'https://go.drugbank.com/';
-                    break;
-                case 'surgery':
-                    url = 'https://www.facs.org/education/patient-education/patient-resources/operations/';
-                    break;
-                case 'research':
-                    url = 'https://pubmed.ncbi.nlm.nih.gov/';
-                    break;
-                case 'case':
-                    url = 'https://www.medicalnewstoday.com/cases';
-                    break;
-                default:
-                    url = '#';
-            }
-            window.open(url, '_blank');
-        }
-
-        function openCourse(name) {
-            alert(`📘 ${name} kursi ochilmoqda\n\nBu kursda ${courses.find(c => c.name === name)?.videos || 0} ta video mavjud.`);
-            showSection('videos');
-        }
-
-        // Initial load
-        window.onload = function() {
-            loadCourses();
-            loadVideos('shorts');
-            loadDashboard();
-            loadPricing();
-            
-            document.querySelectorAll('.nav-links a').forEach(a => {
-                if (a.textContent.trim() === 'Home') {
-                    a.classList.add('active-nav');
-                }
-            });
-        };
-    </script>
+    <!-- Main JavaScript -->
+    <script src="js/main.js"></script>
 </body>
 </html>
