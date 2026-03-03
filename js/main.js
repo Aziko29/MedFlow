@@ -1,6 +1,6 @@
 /**
  * MEDFLOW - Main JavaScript File
- * Version: 2.0
+ * Version: 2.1 (Fixed)
  * Author: MEDFLOW Team
  */
 
@@ -183,10 +183,15 @@ let currentState = {
     loading: false
 };
 
+// Initialize userAnswers array
+if (currentState.quiz.currentQuiz) {
+    currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
+}
+
 // ===== UTILITY FUNCTIONS =====
 function escapeHTML(str) {
     if (!str) return '';
-    return str.replace(/[&<>"]/g, function(match) {
+    return String(str).replace(/[&<>"]/g, function(match) {
         if (match === '&') return '&amp;';
         if (match === '<') return '&lt;';
         if (match === '>') return '&gt;';
@@ -208,6 +213,10 @@ function showLoading(show = true) {
 }
 
 function showNotification(message, type = 'info') {
+    // Remove existing notifications
+    const existing = document.querySelectorAll('.notification');
+    existing.forEach(n => n.remove());
+    
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
@@ -250,7 +259,11 @@ function loadState() {
         if (saved) {
             const parsed = JSON.parse(saved);
             currentState.user = parsed.user || currentState.user;
-            currentState.quiz = { ...currentState.quiz, ...parsed.quiz };
+            currentState.quiz = { 
+                ...currentState.quiz, 
+                ...parsed.quiz,
+                currentQuiz: currentState.quiz.currentQuiz // Preserve quiz data
+            };
             currentState.videoType = parsed.videoType || 'shorts';
             currentState.darkMode = parsed.darkMode || false;
             
@@ -266,15 +279,25 @@ function loadState() {
 // ===== MOBILE MENU =====
 function toggleMobileMenu() {
     const navLinks = document.getElementById('navLinks');
+    if (!navLinks) return;
+    
     const expanded = navLinks.classList.contains('show');
     navLinks.classList.toggle('show');
-    document.querySelector('.mobile-menu-btn').setAttribute('aria-expanded', !expanded);
+    const btn = document.querySelector('.mobile-menu-btn');
+    if (btn) {
+        btn.setAttribute('aria-expanded', !expanded);
+    }
 }
 
 function closeMobileMenu() {
     const navLinks = document.getElementById('navLinks');
-    navLinks.classList.remove('show');
-    document.querySelector('.mobile-menu-btn').setAttribute('aria-expanded', 'false');
+    if (navLinks) {
+        navLinks.classList.remove('show');
+    }
+    const btn = document.querySelector('.mobile-menu-btn');
+    if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+    }
 }
 
 // ===== NAVIGATION =====
@@ -291,8 +314,9 @@ function showSection(sectionId) {
     // Update nav links
     document.querySelectorAll('.nav-links a').forEach(a => {
         a.classList.remove('active-nav');
-        if (a.textContent.trim().toLowerCase().includes(sectionId.toLowerCase()) || 
-            (sectionId === 'home' && a.textContent.trim() === 'Home')) {
+        const text = a.textContent.trim().toLowerCase();
+        if ((sectionId === 'home' && text === 'home') || 
+            (sectionId !== 'home' && text.includes(sectionId.toLowerCase()))) {
             a.classList.add('active-nav');
         }
     });
@@ -303,15 +327,20 @@ function showSection(sectionId) {
     
     // Load section data
     setTimeout(() => {
-        if (sectionId === 'courses') loadCourses();
-        if (sectionId === 'videos') loadVideos(currentState.videoType);
-        if (sectionId === 'quiz') loadQuiz('anatomy');
-        if (sectionId === 'dashboard') loadDashboard();
-        if (sectionId === 'pricing') loadPricing();
-        if (sectionId === 'library') loadLibrary();
-        if (sectionId === 'home') loadHomeData();
-        
-        showLoading(false);
+        try {
+            if (sectionId === 'courses') loadCourses();
+            if (sectionId === 'videos') loadVideos(currentState.videoType);
+            if (sectionId === 'quiz') loadQuiz('anatomy', document.querySelector('.quiz-tabs .btn-primary'));
+            if (sectionId === 'dashboard') loadDashboard();
+            if (sectionId === 'pricing') loadPricing();
+            if (sectionId === 'library') loadLibrary();
+            if (sectionId === 'home') loadHomeData();
+        } catch (e) {
+            console.error('Error loading section:', e);
+            showNotification('Xatolik yuz berdi', 'error');
+        } finally {
+            showLoading(false);
+        }
     }, 100);
 }
 
@@ -364,7 +393,7 @@ function loadPreviewCourses() {
     const grid = document.getElementById('previewCourses');
     if (!grid) return;
     
-    const preview = courses.slice(0, 2);
+    const preview = courses.slice(0, 3);
     grid.innerHTML = preview.map(course => `
         <div class="course-card" onclick="showSection('courses')">
             <div class="course-image" style="background-image: url('${escapeHTML(course.image)}')"></div>
@@ -437,9 +466,13 @@ function filterVideos(type, element) {
 }
 
 function playVideo(title, videoUrl) {
-    document.getElementById('modalVideoTitle').textContent = title;
-    document.getElementById('modalVideoIframe').src = videoUrl + '?autoplay=1';
-    document.getElementById('videoModal').classList.add('active');
+    const modalTitle = document.getElementById('modalVideoTitle');
+    const modalIframe = document.getElementById('modalVideoIframe');
+    const modal = document.getElementById('videoModal');
+    
+    if (modalTitle) modalTitle.textContent = title;
+    if (modalIframe) modalIframe.src = videoUrl + '?autoplay=1&rel=0';
+    if (modal) modal.classList.add('active');
     document.body.style.overflow = 'hidden';
     
     // Track video play
@@ -447,8 +480,11 @@ function playVideo(title, videoUrl) {
 }
 
 function closeVideoModal() {
-    document.getElementById('videoModal').classList.remove('active');
-    document.getElementById('modalVideoIframe').src = '';
+    const modal = document.getElementById('videoModal');
+    const modalIframe = document.getElementById('modalVideoIframe');
+    
+    if (modal) modal.classList.remove('active');
+    if (modalIframe) modalIframe.src = '';
     document.body.style.overflow = '';
 }
 
@@ -548,11 +584,16 @@ function displayQuestion() {
         </div>
     `;
     
-    document.getElementById('questionCounter').textContent = 
-        `${currentState.quiz.currentQuestion + 1} / ${currentState.quiz.currentQuiz.length}`;
+    const counter = document.getElementById('questionCounter');
+    if (counter) {
+        counter.textContent = `${currentState.quiz.currentQuestion + 1} / ${currentState.quiz.currentQuiz.length}`;
+    }
     
     // Update navigation buttons
-    document.getElementById('prevBtn').disabled = currentState.quiz.currentQuestion === 0;
+    const prevBtn = document.getElementById('prevBtn');
+    if (prevBtn) {
+        prevBtn.disabled = currentState.quiz.currentQuestion === 0;
+    }
 }
 
 function selectAnswer(idx) {
@@ -613,12 +654,15 @@ function showResults() {
             ${percentage >= 70 ? 
                 '<p>🎉 Tabriklaymiz! Siz muvaffaqiyatli o\'tdingiz.</p>' : 
                 '<p>💪 Qayta urinib ko\'ring. Zaif mavzularni takrorlang.</p>'}
-            <button class="btn btn-primary" onclick="restartQuiz()">Qayta boshlash</button>
+            <button class="btn btn-primary" onclick="restartQuiz()" style="margin-top: 15px;">Qayta boshlash</button>
         </div>
     `;
     
     // Save test result to user progress
     if (currentState.user.isLoggedIn) {
+        if (!currentState.user.progress.testResults) {
+            currentState.user.progress.testResults = [];
+        }
         currentState.user.progress.testResults.push({
             topic: currentState.quiz.currentQuiz,
             score: currentState.quiz.score,
@@ -637,7 +681,8 @@ function restartQuiz() {
     currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
     currentState.quiz.score = 0;
     displayQuestion();
-    document.getElementById('quizResult').innerHTML = '';
+    const result = document.getElementById('quizResult');
+    if (result) result.innerHTML = '';
     saveState();
 }
 
@@ -663,9 +708,9 @@ function loadDashboard() {
     }
     
     // Load real data from user progress
-    const watchedCount = currentState.user.progress.watchedVideos.length;
-    const testsPassed = currentState.user.progress.testResults.length;
-    const avgScore = currentState.user.progress.testResults.length > 0 ?
+    const watchedCount = currentState.user.progress.watchedVideos ? currentState.user.progress.watchedVideos.length : 0;
+    const testsPassed = currentState.user.progress.testResults ? currentState.user.progress.testResults.length : 0;
+    const avgScore = currentState.user.progress.testResults && currentState.user.progress.testResults.length > 0 ?
         Math.round(currentState.user.progress.testResults.reduce((acc, t) => acc + (t.score / t.total * 100), 0) / 
         currentState.user.progress.testResults.length) : 0;
     
@@ -684,7 +729,7 @@ function loadDashboard() {
                 <div>Average score</div>
             </div>
             <div class="stat-card">
-                <div class="number">${currentState.user.progress.streak}</div>
+                <div class="number">${currentState.user.progress.streak || 0}</div>
                 <div>Day streak</div>
             </div>
         `;
@@ -700,7 +745,7 @@ function loadDashboard() {
                 ${weakTopics.map((topic, i) => {
                     const percentage = [65, 80, 45][i];
                     return `
-                        <div>
+                        <div style="margin-bottom: 15px;">
                             <div style="display: flex; justify-content: space-between;">
                                 <span>${topic}</span>
                                 <span>${percentage}%</span>
@@ -714,11 +759,11 @@ function loadDashboard() {
             </div>
             
             <h3>Sizga tavsiya</h3>
-            <div class="shorts-grid">
-                <button class="short-item" style="background: var(--accent); color: white;" onclick="showSection('videos')">
+            <div class="shorts-grid" style="grid-template-columns: 1fr 1fr;">
+                <button class="short-item" style="background: var(--accent); color: white; min-height: 100px;" onclick="showSection('videos')">
                     <i class="fas fa-brain"></i> Nevrologiya asoslari
                 </button>
-                <button class="short-item" style="background: var(--primary); color: white;" onclick="showSection('videos')">
+                <button class="short-item" style="background: var(--primary); color: white; min-height: 100px;" onclick="showSection('videos')">
                     <i class="fas fa-pills"></i> Beta blokatorlar
                 </button>
             </div>
@@ -800,43 +845,48 @@ function selectPlan(plan) {
 
 // ===== AUTHENTICATION =====
 function showLoginModal() {
-    document.getElementById('loginModal').classList.add('active');
-    document.body.style.overflow = 'hidden';
+    const modal = document.getElementById('loginModal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
 }
 
 function closeLoginModal() {
-    document.getElementById('loginModal').classList.remove('active');
-    document.body.style.overflow = '';
+    const modal = document.getElementById('loginModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
 }
 
 function showRegisterModal() {
     closeLoginModal();
-    document.getElementById('registerModal').classList.add('active');
+    const modal = document.getElementById('registerModal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
 }
 
 function closeRegisterModal() {
-    document.getElementById('registerModal').classList.remove('active');
-    document.body.style.overflow = '';
-}
-
-function showLogin() {
-    closeRegisterModal();
-    showLoginModal();
-}
-
-function showRegister() {
-    closeLoginModal();
-    showRegisterModal();
+    const modal = document.getElementById('registerModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
 }
 
 function handleLogin(event) {
     event.preventDefault();
     
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
+    const email = document.getElementById('loginEmail');
+    const password = document.getElementById('loginPassword');
+    
+    if (!email || !password) return;
     
     // Simple validation
-    if (!email || !password) {
+    if (!email.value || !password.value) {
         showNotification('Email va parolni kiriting', 'warning');
         return;
     }
@@ -846,8 +896,9 @@ function handleLogin(event) {
     // Simulate login
     setTimeout(() => {
         currentState.user.isLoggedIn = true;
-        currentState.user.email = email;
-        currentState.user.name = email.split('@')[0];
+        currentState.user.email = email.value;
+        currentState.user.name = email.value.split('@')[0];
+        currentState.user.progress.lastActive = new Date().toISOString();
         
         saveState();
         showNotification(`Xush kelibsiz, ${currentState.user.name}!`, 'success');
@@ -867,12 +918,14 @@ function handleLogin(event) {
 function handleRegister(event) {
     event.preventDefault();
     
-    const name = document.getElementById('registerName').value;
-    const email = document.getElementById('registerEmail').value;
-    const password = document.getElementById('registerPassword').value;
-    const role = document.getElementById('registerRole').value;
+    const name = document.getElementById('registerName');
+    const email = document.getElementById('registerEmail');
+    const password = document.getElementById('registerPassword');
+    const role = document.getElementById('registerRole');
     
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !role) return;
+    
+    if (!name.value || !email.value || !password.value) {
         showNotification('Barcha maydonlarni to\'ldiring', 'warning');
         return;
     }
@@ -882,9 +935,9 @@ function handleRegister(event) {
     // Simulate registration
     setTimeout(() => {
         currentState.user.isLoggedIn = true;
-        currentState.user.name = name;
-        currentState.user.email = email;
-        currentState.user.role = role;
+        currentState.user.name = name.value;
+        currentState.user.email = email.value;
+        currentState.user.role = role.value;
         currentState.user.progress = {
             watchedVideos: [],
             testResults: [],
@@ -893,7 +946,7 @@ function handleRegister(event) {
         };
         
         saveState();
-        showNotification(`Tabriklaymiz, ${name}! Ro'yxatdan o'tish muvaffaqiyatli`, 'success');
+        showNotification(`Tabriklaymiz, ${name.value}! Ro'yxatdan o'tish muvaffaqiyatli`, 'success');
         closeRegisterModal();
         
         if (currentState.section === 'dashboard') {
@@ -932,10 +985,10 @@ function logout() {
 }
 
 function updateAuthUI() {
-    const loginBtn = document.querySelector('.nav-links .btn-primary');
+    const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) {
         if (currentState.user.isLoggedIn) {
-            loginBtn.innerHTML = `<i class="fas fa-user-circle"></i> ${currentState.user.name}`;
+            loginBtn.innerHTML = `<i class="fas fa-user-circle"></i> ${escapeHTML(currentState.user.name)}`;
             loginBtn.onclick = () => showUserMenu();
         } else {
             loginBtn.innerHTML = `<i class="fas fa-sign-in-alt"></i> Login`;
@@ -945,7 +998,11 @@ function updateAuthUI() {
 }
 
 function showUserMenu() {
-    // Simple user menu
+    // Remove existing menu
+    const existing = document.querySelector('.user-menu');
+    if (existing) existing.remove();
+    
+    // Create new menu
     const menu = document.createElement('div');
     menu.className = 'user-menu';
     menu.innerHTML = `
@@ -958,30 +1015,32 @@ function showUserMenu() {
         </div>
     `;
     
-    // Remove existing menu
-    const existing = document.querySelector('.user-menu');
-    if (existing) existing.remove();
-    
     document.body.appendChild(menu);
     
     // Close on click outside
     setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target) && !e.target.closest('.btn-primary')) {
+        function closeMenu(e) {
+            if (!menu.contains(e.target) && !e.target.closest('#loginBtn')) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }
-        });
+        }
+        document.addEventListener('click', closeMenu);
     }, 100);
 }
 
 // ===== ANALYTICS =====
 function trackEvent(action, category, label) {
-    if (typeof gtag !== 'undefined') {
-        gtag('event', action, {
-            'event_category': category,
-            'event_label': label
-        });
+    // Safe tracking - don't throw error if gtag is undefined
+    try {
+        if (typeof gtag !== 'undefined' && gtag) {
+            gtag('event', action, {
+                'event_category': category,
+                'event_label': label
+            });
+        }
+    } catch (e) {
+        // Silently fail - analytics is optional
     }
     console.log(`📊 Track: ${category} - ${action} - ${label}`);
 }
@@ -1001,10 +1060,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load saved state
     loadState();
     
+    // Initialize userAnswers if needed
+    if (currentState.quiz.currentQuiz && (!currentState.quiz.userAnswers || currentState.quiz.userAnswers.length === 0)) {
+        currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
+    }
+    
     // Load initial data
-    loadFeatures();
-    loadStats();
-    loadPreviewCourses();
+    loadHomeData();
     loadCourses();
     loadVideos('shorts');
     loadDashboard();
@@ -1019,7 +1081,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Set current year in footer
-    document.getElementById('currentYear').textContent = new Date().getFullYear();
+    const yearElement = document.getElementById('currentYear');
+    if (yearElement) {
+        yearElement.textContent = new Date().getFullYear();
+    }
     
     // Update online status
     updateOnlineStatus();
@@ -1050,9 +1115,9 @@ window.showLoginModal = showLoginModal;
 window.closeLoginModal = closeLoginModal;
 window.showRegisterModal = showRegisterModal;
 window.closeRegisterModal = closeRegisterModal;
-window.showLogin = showLogin;
-window.showRegister = showRegister;
 window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;
 window.logout = logout;
 window.selectPlan = selectPlan;
+window.showNotification = showNotification;
+window.restartQuiz = restartQuiz;
