@@ -1,7 +1,8 @@
 /**
- * MEDFLOW - Main JavaScript File
- * Version: 2.1 (Fixed)
+ * MEDFLOW - Professional Static Website
+ * Version: 3.0
  * Author: MEDFLOW Team
+ * All data stored in localStorage - No backend required
  */
 
 // ===== DATA =====
@@ -13,7 +14,8 @@ const courses = [
         videos: 24, 
         tests: 120, 
         image: 'https://images.unsplash.com/photo-1579165466741-7f35e4755660?w=400&q=80',
-        description: 'Inson anatomiyasi - organlar, tizimlar va tuzilmalar'
+        description: 'Inson anatomiyasi - organlar, tizimlar va tuzilmalar',
+        icon: 'fa-heartbeat'
     },
     { 
         id: 'physiology',
@@ -22,7 +24,8 @@ const courses = [
         videos: 32, 
         tests: 150, 
         image: 'https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=400&q=80',
-        description: 'Organlar va tizimlarning ishlash prinsiplari'
+        description: 'Organlar va tizimlarning ishlash prinsiplari',
+        icon: 'fa-lungs'
     },
     { 
         id: 'pharmacology',
@@ -31,7 +34,8 @@ const courses = [
         videos: 45, 
         tests: 200, 
         image: 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=400&q=80',
-        description: 'Dorilar, ularning ta\'siri va qo\'llanilishi'
+        description: 'Dorilar, ularning ta\'siri va qo\'llanilishi',
+        icon: 'fa-pills'
     },
     { 
         id: 'cardiology',
@@ -40,7 +44,8 @@ const courses = [
         videos: 28, 
         tests: 140, 
         image: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=400&q=80',
-        description: 'Yurak-qon tomir kasalliklari va ularni davolash'
+        description: 'Yurak-qon tomir kasalliklari va ularni davolash',
+        icon: 'fa-heart'
     },
     { 
         id: 'surgery',
@@ -49,7 +54,8 @@ const courses = [
         videos: 36, 
         tests: 180, 
         image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&q=80',
-        description: 'Jarrohlik usullari, operatsiyalar va asoratlar'
+        description: 'Jarrohlik usullari, operatsiyalar va asoratlar',
+        icon: 'fa-scalpel'
     },
     { 
         id: 'neurology',
@@ -58,53 +64,66 @@ const courses = [
         videos: 22, 
         tests: 110, 
         image: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=400&q=80',
-        description: 'Asab tizimi kasalliklari va ularni davolash'
+        description: 'Asab tizimi kasalliklari va ularni davolash',
+        icon: 'fa-brain'
     }
 ];
 
 const videos = {
     shorts: [
         { 
-            title: 'Otitis media - 60s', 
+            title: 'Otitis media', 
             duration: '60 sec', 
             image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80', 
             videoUrl: 'https://www.youtube.com/embed/TiSpjfuQxXM',
-            description: 'Otitis media etiology, symptoms, treatment in 60 seconds' 
+            description: 'Otitis media etiology, symptoms, treatment in 60 seconds',
+            views: 15420,
+            likes: 1250
         },
         { 
             title: 'Myocardial infarction', 
             duration: '55 sec', 
             image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/3JZ_D3ELwOQ',
-            description: 'Heart attack signs, symptoms and emergency management' 
+            description: 'Heart attack signs, symptoms and emergency management',
+            views: 12450,
+            likes: 980
         },
         { 
             title: 'Pneumonia', 
             duration: '45 sec', 
             image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/FjYjsftnFwA',
-            description: 'Pneumonia types, causes and treatment' 
+            description: 'Pneumonia types, causes and treatment',
+            views: 9870,
+            likes: 760
         },
         { 
             title: 'Diabetes mellitus', 
             duration: '60 sec', 
             image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/Xl9m7N5q_Sc',
-            description: 'Diabetes types, symptoms and management' 
+            description: 'Diabetes types, symptoms and management',
+            views: 21340,
+            likes: 1840
         },
         { 
             title: 'Hypertension', 
             duration: '50 sec', 
             image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/gK7sR0EfRkM',
-            description: 'High blood pressure causes and treatment' 
+            description: 'High blood pressure causes and treatment',
+            views: 17890,
+            likes: 1430
         },
         { 
             title: 'Asthma', 
             duration: '55 sec', 
             image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/P2pBzN0nz9U',
-            description: 'Asthma symptoms, triggers and medications' 
+            description: 'Asthma symptoms, triggers and medications',
+            views: 14560,
+            likes: 1120
         }
     ],
     lectures: [
@@ -113,21 +132,27 @@ const videos = {
             duration: '12 min', 
             image: 'https://images.unsplash.com/photo-1612277795421-9bc7706a4a34?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/0VqT8cF7Q1k',
-            description: 'Heart failure pathophysiology and management' 
+            description: 'Heart failure pathophysiology and management',
+            views: 8760,
+            likes: 690
         },
         { 
             title: 'Renal system', 
             duration: '15 min', 
             image: 'https://images.unsplash.com/photo-1581595219315-a187dd40c322?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/-lZpvAHdtjM',
-            description: 'Kidney diseases and renal disorders' 
+            description: 'Kidney diseases and renal disorders',
+            views: 6540,
+            likes: 520
         },
         { 
             title: 'Liver diseases', 
             duration: '18 min', 
             image: 'https://images.unsplash.com/photo-1571772995611-d1c4b194ac9e?w=400&q=80',
             videoUrl: 'https://www.youtube.com/embed/6h9xIx9aZ_Y',
-            description: 'Hepatitis, cirrhosis and liver disorders' 
+            description: 'Hepatitis, cirrhosis and liver disorders',
+            views: 7890,
+            likes: 630
         }
     ]
 };
@@ -156,6 +181,15 @@ const quizzes = {
     ]
 };
 
+const library = [
+    { id: 'anatomy', icon: 'fa-book', title: 'Anatomy Atlas', desc: 'PDF, 45 pages', url: '#' },
+    { id: 'guidelines', icon: 'fa-file-pdf', title: 'Clinical Guidelines 2026', desc: 'WHO protocols', url: '#' },
+    { id: 'pharma', icon: 'fa-capsules', title: 'Pharmacology Handbook', desc: 'PDF, 120 pages', url: '#' },
+    { id: 'surgery', icon: 'fa-scalpel', title: 'Surgical Techniques', desc: 'Video + PDF', url: '#' },
+    { id: 'research', icon: 'fa-flask', title: 'Research Papers', desc: 'Latest studies', url: '#' },
+    { id: 'case', icon: 'fa-notes-medical', title: 'Clinical Cases', desc: '50+ cases', url: '#' }
+];
+
 // ===== STATE MANAGEMENT =====
 let currentState = {
     section: 'home',
@@ -179,19 +213,13 @@ let currentState = {
         }
     },
     videoType: 'shorts',
-    darkMode: false,
-    loading: false
+    darkMode: false
 };
-
-// Initialize userAnswers array
-if (currentState.quiz.currentQuiz) {
-    currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
-}
 
 // ===== UTILITY FUNCTIONS =====
 function escapeHTML(str) {
     if (!str) return '';
-    return String(str).replace(/[&<>"]/g, function(match) {
+    return str.replace(/[&<>"]/g, function(match) {
         if (match === '&') return '&amp;';
         if (match === '<') return '&lt;';
         if (match === '>') return '&gt;';
@@ -205,20 +233,19 @@ function formatNumber(num) {
 }
 
 function showLoading(show = true) {
-    currentState.loading = show;
     const loader = document.getElementById('globalLoader');
     if (loader) {
-        loader.style.display = show ? 'flex' : 'none';
+        if (show) {
+            loader.classList.add('active');
+        } else {
+            loader.classList.remove('active');
+        }
     }
 }
 
 function showNotification(message, type = 'info') {
-    // Remove existing notifications
-    const existing = document.querySelectorAll('.notification');
-    existing.forEach(n => n.remove());
-    
     const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
+    notification.className = `notification ${type}`;
     notification.textContent = message;
     notification.setAttribute('role', 'alert');
     document.body.appendChild(notification);
@@ -236,18 +263,7 @@ function showNotification(message, type = 'info') {
 // ===== LOCAL STORAGE =====
 function saveState() {
     try {
-        const stateToSave = {
-            user: currentState.user,
-            quiz: {
-                currentQuestion: currentState.quiz.currentQuestion,
-                userAnswers: currentState.quiz.userAnswers,
-                score: currentState.quiz.score,
-                completed: currentState.quiz.completed
-            },
-            videoType: currentState.videoType,
-            darkMode: currentState.darkMode
-        };
-        localStorage.setItem('medflow_state', JSON.stringify(stateToSave));
+        localStorage.setItem('medflow_state', JSON.stringify(currentState));
     } catch (e) {
         console.error('Error saving state:', e);
     }
@@ -259,16 +275,11 @@ function loadState() {
         if (saved) {
             const parsed = JSON.parse(saved);
             currentState.user = parsed.user || currentState.user;
-            currentState.quiz = { 
-                ...currentState.quiz, 
-                ...parsed.quiz,
-                currentQuiz: currentState.quiz.currentQuiz // Preserve quiz data
-            };
             currentState.videoType = parsed.videoType || 'shorts';
-            currentState.darkMode = parsed.darkMode || false;
             
-            if (currentState.darkMode) {
-                document.body.classList.add('dark-mode');
+            // Update UI based on login state
+            if (currentState.user.isLoggedIn) {
+                updateAuthUI();
             }
         }
     } catch (e) {
@@ -279,44 +290,24 @@ function loadState() {
 // ===== MOBILE MENU =====
 function toggleMobileMenu() {
     const navLinks = document.getElementById('navLinks');
-    if (!navLinks) return;
-    
-    const expanded = navLinks.classList.contains('show');
     navLinks.classList.toggle('show');
-    const btn = document.querySelector('.mobile-menu-btn');
-    if (btn) {
-        btn.setAttribute('aria-expanded', !expanded);
-    }
 }
 
 function closeMobileMenu() {
-    const navLinks = document.getElementById('navLinks');
-    if (navLinks) {
-        navLinks.classList.remove('show');
-    }
-    const btn = document.querySelector('.mobile-menu-btn');
-    if (btn) {
-        btn.setAttribute('aria-expanded', 'false');
-    }
+    document.getElementById('navLinks').classList.remove('show');
 }
 
 // ===== NAVIGATION =====
 function showSection(sectionId) {
     showLoading(true);
     
-    // Update sections
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    const targetSection = document.getElementById(sectionId);
-    if (targetSection) {
-        targetSection.classList.add('active');
-    }
+    document.getElementById(sectionId).classList.add('active');
     
-    // Update nav links
     document.querySelectorAll('.nav-links a').forEach(a => {
         a.classList.remove('active-nav');
-        const text = a.textContent.trim().toLowerCase();
-        if ((sectionId === 'home' && text === 'home') || 
-            (sectionId !== 'home' && text.includes(sectionId.toLowerCase()))) {
+        if (a.textContent.trim().toLowerCase().includes(sectionId.toLowerCase()) || 
+            (sectionId === 'home' && a.textContent.trim() === 'Home')) {
             a.classList.add('active-nav');
         }
     });
@@ -325,23 +316,17 @@ function showSection(sectionId) {
     closeMobileMenu();
     saveState();
     
-    // Load section data
     setTimeout(() => {
-        try {
-            if (sectionId === 'courses') loadCourses();
-            if (sectionId === 'videos') loadVideos(currentState.videoType);
-            if (sectionId === 'quiz') loadQuiz('anatomy', document.querySelector('.quiz-tabs .btn-primary'));
-            if (sectionId === 'dashboard') loadDashboard();
-            if (sectionId === 'pricing') loadPricing();
-            if (sectionId === 'library') loadLibrary();
-            if (sectionId === 'home') loadHomeData();
-        } catch (e) {
-            console.error('Error loading section:', e);
-            showNotification('Xatolik yuz berdi', 'error');
-        } finally {
-            showLoading(false);
-        }
-    }, 100);
+        if (sectionId === 'courses') loadCourses();
+        if (sectionId === 'videos') loadVideos(currentState.videoType);
+        if (sectionId === 'quiz') loadQuiz('anatomy');
+        if (sectionId === 'dashboard') loadDashboard();
+        if (sectionId === 'pricing') loadPricing();
+        if (sectionId === 'library') loadLibrary();
+        if (sectionId === 'home') loadHomeData();
+        
+        showLoading(false);
+    }, 300);
 }
 
 // ===== HOME SECTION =====
@@ -365,8 +350,8 @@ function loadFeatures() {
     grid.innerHTML = features.map(f => `
         <div class="feature-card">
             <div class="feature-icon"><i class="fas ${f.icon}"></i></div>
-            <h3>${escapeHTML(f.title)}</h3>
-            <p>${escapeHTML(f.desc)}</p>
+            <h3>${f.title}</h3>
+            <p>${f.desc}</p>
         </div>
     `).join('');
 }
@@ -383,8 +368,8 @@ function loadStats() {
     
     grid.innerHTML = stats.map(s => `
         <div class="stat-item">
-            <div class="number">${escapeHTML(s.number)}</div>
-            <div>${escapeHTML(s.label)}</div>
+            <div class="number">${s.number}</div>
+            <div>${s.label}</div>
         </div>
     `).join('');
 }
@@ -393,13 +378,13 @@ function loadPreviewCourses() {
     const grid = document.getElementById('previewCourses');
     if (!grid) return;
     
-    const preview = courses.slice(0, 3);
+    const preview = courses.slice(0, 2);
     grid.innerHTML = preview.map(course => `
         <div class="course-card" onclick="showSection('courses')">
-            <div class="course-image" style="background-image: url('${escapeHTML(course.image)}')"></div>
+            <div class="course-image" style="background-image: url('${course.image}')"></div>
             <div class="course-content">
-                <span class="course-category">${escapeHTML(course.category)}</span>
-                <h3>${escapeHTML(course.name)}</h3>
+                <span class="course-category">${course.category}</span>
+                <h3>${course.name}</h3>
                 <div class="course-meta">
                     <span><i class="fas fa-video"></i> ${course.videos} videos</span>
                 </div>
@@ -414,12 +399,12 @@ function loadCourses() {
     if (!grid) return;
     
     grid.innerHTML = courses.map(course => `
-        <div class="course-card" onclick="openCourse('${escapeHTML(course.id)}')">
-            <div class="course-image" style="background-image: url('${escapeHTML(course.image)}')"></div>
+        <div class="course-card" onclick="openCourse('${course.id}')">
+            <div class="course-image" style="background-image: url('${course.image}')"></div>
             <div class="course-content">
-                <span class="course-category">${escapeHTML(course.category)}</span>
-                <h3>${escapeHTML(course.name)}</h3>
-                <p>${escapeHTML(course.description)}</p>
+                <span class="course-category">${course.category}</span>
+                <h3>${course.name}</h3>
+                <p>${course.description}</p>
                 <div class="course-meta">
                     <span><i class="fas fa-video"></i> ${course.videos} videos</span>
                     <span><i class="fas fa-question-circle"></i> ${course.tests} tests</span>
@@ -446,12 +431,12 @@ function loadVideos(type) {
     const videoList = type === 'shorts' ? videos.shorts : videos.lectures;
     
     grid.innerHTML = videoList.map(v => `
-        <button class="short-item" style="background-image: url('${escapeHTML(v.image)}')" 
-                onclick="playVideo('${escapeHTML(v.title)}', '${escapeHTML(v.videoUrl)}')"
-                aria-label="Play ${escapeHTML(v.title)}">
+        <button class="short-item" style="background-image: url('${v.image}')" 
+                onclick="playVideo('${v.title}', '${v.videoUrl}')">
             <i class="fas fa-play-circle" style="font-size: 2rem;"></i>
-            <strong>${escapeHTML(v.title)}</strong>
-            <small>${escapeHTML(v.duration)}</small>
+            <strong>${v.title}</strong>
+            <small>${v.duration}</small>
+            <small><i class="fas fa-eye"></i> ${formatNumber(v.views)}</small>
         </button>
     `).join('');
     
@@ -461,30 +446,27 @@ function loadVideos(type) {
 function filterVideos(type, element) {
     document.querySelectorAll('.video-tab').forEach(t => t.classList.remove('active'));
     element.classList.add('active');
-    element.setAttribute('aria-selected', 'true');
     loadVideos(type);
 }
 
 function playVideo(title, videoUrl) {
-    const modalTitle = document.getElementById('modalVideoTitle');
-    const modalIframe = document.getElementById('modalVideoIframe');
-    const modal = document.getElementById('videoModal');
-    
-    if (modalTitle) modalTitle.textContent = title;
-    if (modalIframe) modalIframe.src = videoUrl + '?autoplay=1&rel=0';
-    if (modal) modal.classList.add('active');
+    document.getElementById('modalVideoTitle').textContent = title;
+    document.getElementById('modalVideoIframe').src = videoUrl + '?autoplay=1';
+    document.getElementById('videoModal').classList.add('active');
     document.body.style.overflow = 'hidden';
     
-    // Track video play
-    trackEvent('video_play', 'engagement', title);
+    if (currentState.user.isLoggedIn) {
+        currentState.user.progress.watchedVideos.push({
+            title: title,
+            date: new Date().toISOString()
+        });
+        saveState();
+    }
 }
 
 function closeVideoModal() {
-    const modal = document.getElementById('videoModal');
-    const modalIframe = document.getElementById('modalVideoIframe');
-    
-    if (modal) modal.classList.remove('active');
-    if (modalIframe) modalIframe.src = '';
+    document.getElementById('videoModal').classList.remove('active');
+    document.getElementById('modalVideoIframe').src = '';
     document.body.style.overflow = '';
 }
 
@@ -497,37 +479,17 @@ function loadLibrary() {
     const grid = document.getElementById('libraryGrid');
     if (!grid) return;
     
-    const library = [
-        { icon: 'fa-book', title: 'Anatomy Atlas', desc: 'PDF, 45 pages', type: 'anatomy' },
-        { icon: 'fa-file-pdf', title: 'Clinical Guidelines 2026', desc: 'WHO protocols', type: 'guidelines' },
-        { icon: 'fa-capsules', title: 'Pharmacology Handbook', desc: 'PDF, 120 pages', type: 'pharma' },
-        { icon: 'fa-scalpel', title: 'Surgical Techniques', desc: 'Video + PDF', type: 'surgery' },
-        { icon: 'fa-flask', title: 'Research Papers', desc: 'Latest studies', type: 'research' },
-        { icon: 'fa-notes-medical', title: 'Clinical Cases', desc: '50+ cases', type: 'case' }
-    ];
-    
     grid.innerHTML = library.map(item => `
-        <div class="library-item" onclick="openPDF('${escapeHTML(item.type)}')">
+        <div class="library-item" onclick="openPDF('${item.id}')">
             <i class="fas ${item.icon}"></i>
-            <h3>${escapeHTML(item.title)}</h3>
-            <p>${escapeHTML(item.desc)}</p>
+            <h3>${item.title}</h3>
+            <p>${item.desc}</p>
         </div>
     `).join('');
 }
 
 function openPDF(type) {
-    const urls = {
-        anatomy: 'https://www.kenhub.com/en/library/anatomy',
-        guidelines: 'https://www.who.int/publications/guidelines',
-        pharma: 'https://go.drugbank.com/',
-        surgery: 'https://www.facs.org/education/patient-education/patient-resources/operations/',
-        research: 'https://pubmed.ncbi.nlm.nih.gov/',
-        case: 'https://www.medicalnewstoday.com/cases'
-    };
-    
-    const url = urls[type] || '#';
-    window.open(url, '_blank', 'noopener,noreferrer');
-    trackEvent('pdf_open', 'library', type);
+    showNotification(`📚 ${type} - Yuklanmoqda...`, 'info');
 }
 
 // ===== QUIZ SECTION =====
@@ -571,29 +533,23 @@ function displayQuestion() {
     
     content.innerHTML = `
         <div class="quiz-question">
-            <h3>${currentState.quiz.currentQuestion + 1}. ${escapeHTML(q.question)}</h3>
+            <h3>${currentState.quiz.currentQuestion + 1}. ${q.question}</h3>
         </div>
         <div class="quiz-options">
             ${q.options.map((opt, idx) => `
                 <button class="quiz-option ${currentState.quiz.userAnswers[currentState.quiz.currentQuestion] === idx ? 'selected' : ''}" 
                         onclick="selectAnswer(${idx})"
                         ${currentState.quiz.completed ? 'disabled' : ''}>
-                    ${String.fromCharCode(65 + idx)}. ${escapeHTML(opt)}
+                    ${String.fromCharCode(65 + idx)}. ${opt}
                 </button>
             `).join('')}
         </div>
     `;
     
-    const counter = document.getElementById('questionCounter');
-    if (counter) {
-        counter.textContent = `${currentState.quiz.currentQuestion + 1} / ${currentState.quiz.currentQuiz.length}`;
-    }
+    document.getElementById('questionCounter').textContent = 
+        `${currentState.quiz.currentQuestion + 1} / ${currentState.quiz.currentQuiz.length}`;
     
-    // Update navigation buttons
-    const prevBtn = document.getElementById('prevBtn');
-    if (prevBtn) {
-        prevBtn.disabled = currentState.quiz.currentQuestion === 0;
-    }
+    document.getElementById('prevBtn').disabled = currentState.quiz.currentQuestion === 0;
 }
 
 function selectAnswer(idx) {
@@ -611,7 +567,6 @@ function nextQuestion() {
         currentState.quiz.currentQuestion++;
         displayQuestion();
     } else {
-        // Quiz completed
         calculateScore();
         showResults();
     }
@@ -647,32 +602,26 @@ function showResults() {
     if (!result) return;
     
     result.innerHTML = `
-        <div class="quiz-result-content ${percentage >= 70 ? 'success' : 'warning'}">
+        <div class="quiz-result ${percentage >= 70 ? 'success' : 'warning'}">
             <h3>✅ Test yakunlandi!</h3>
             <p>To'g'ri javoblar: ${currentState.quiz.score} / ${total}</p>
             <p>Natija: ${percentage.toFixed(1)}%</p>
             ${percentage >= 70 ? 
                 '<p>🎉 Tabriklaymiz! Siz muvaffaqiyatli o\'tdingiz.</p>' : 
                 '<p>💪 Qayta urinib ko\'ring. Zaif mavzularni takrorlang.</p>'}
-            <button class="btn btn-primary" onclick="restartQuiz()" style="margin-top: 15px;">Qayta boshlash</button>
+            <button class="btn btn-primary" onclick="restartQuiz()">Qayta boshlash</button>
         </div>
     `;
     
-    // Save test result to user progress
     if (currentState.user.isLoggedIn) {
-        if (!currentState.user.progress.testResults) {
-            currentState.user.progress.testResults = [];
-        }
         currentState.user.progress.testResults.push({
-            topic: currentState.quiz.currentQuiz,
+            topic: currentState.quiz.currentQuiz[0].question.substring(0, 20),
             score: currentState.quiz.score,
             total: total,
             date: new Date().toISOString()
         });
         saveState();
     }
-    
-    trackEvent('quiz_complete', 'engagement', `Score: ${percentage}%`);
 }
 
 function restartQuiz() {
@@ -681,8 +630,7 @@ function restartQuiz() {
     currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
     currentState.quiz.score = 0;
     displayQuestion();
-    const result = document.getElementById('quizResult');
-    if (result) result.innerHTML = '';
+    document.getElementById('quizResult').innerHTML = '';
     saveState();
 }
 
@@ -696,7 +644,7 @@ function loadDashboard() {
         if (content) {
             content.innerHTML = `
                 <div class="dashboard-login-prompt">
-                    <i class="fas fa-user-circle" style="font-size: 4rem; color: var(--accent);"></i>
+                    <i class="fas fa-user-circle"></i>
                     <h3>Dashboardni ko'rish uchun tizimga kiring</h3>
                     <button class="btn btn-primary" onclick="showLoginModal()">
                         <i class="fas fa-sign-in-alt"></i> Kirish
@@ -707,10 +655,9 @@ function loadDashboard() {
         return;
     }
     
-    // Load real data from user progress
-    const watchedCount = currentState.user.progress.watchedVideos ? currentState.user.progress.watchedVideos.length : 0;
-    const testsPassed = currentState.user.progress.testResults ? currentState.user.progress.testResults.length : 0;
-    const avgScore = currentState.user.progress.testResults && currentState.user.progress.testResults.length > 0 ?
+    const watchedCount = currentState.user.progress.watchedVideos.length;
+    const testsPassed = currentState.user.progress.testResults.length;
+    const avgScore = currentState.user.progress.testResults.length > 0 ?
         Math.round(currentState.user.progress.testResults.reduce((acc, t) => acc + (t.score / t.total * 100), 0) / 
         currentState.user.progress.testResults.length) : 0;
     
@@ -729,33 +676,33 @@ function loadDashboard() {
                 <div>Average score</div>
             </div>
             <div class="stat-card">
-                <div class="number">${currentState.user.progress.streak || 0}</div>
+                <div class="number">${currentState.user.progress.streak}</div>
                 <div>Day streak</div>
             </div>
         `;
     }
     
     if (content) {
-        // Calculate weak topics based on test results
-        const weakTopics = ['Farmakologiya', 'Kardiologiya', 'Nevrologiya'];
+        const weakTopics = [
+            { name: 'Farmakologiya', score: 65 },
+            { name: 'Kardiologiya', score: 80 },
+            { name: 'Nevrologiya', score: 45 }
+        ];
         
         content.innerHTML = `
             <h3>Zaif mavzular</h3>
             <div style="margin: 20px 0;">
-                ${weakTopics.map((topic, i) => {
-                    const percentage = [65, 80, 45][i];
-                    return `
-                        <div style="margin-bottom: 15px;">
-                            <div style="display: flex; justify-content: space-between;">
-                                <span>${topic}</span>
-                                <span>${percentage}%</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${percentage}%;"></div>
-                            </div>
+                ${weakTopics.map(topic => `
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>${topic.name}</span>
+                            <span>${topic.score}%</span>
                         </div>
-                    `;
-                }).join('')}
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${topic.score}%;"></div>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
             
             <h3>Sizga tavsiya</h3>
@@ -793,7 +740,7 @@ function loadPricing() {
                 <li><i class="fas fa-times" style="color: #ff4444;"></i> To'liq ma'ruzalar</li>
                 <li><i class="fas fa-times" style="color: #ff4444;"></i> Flashkartalar</li>
             </ul>
-            <button class="btn btn-outline" style="width: 100%;" onclick="selectPlan('free')">Boshlash</button>
+            <button class="btn btn-outline btn-block" onclick="selectPlan('free')">Boshlash</button>
         </div>
         
         <div class="pricing-card featured">
@@ -808,7 +755,7 @@ function loadPricing() {
                 <li><i class="fas fa-check" style="color: var(--accent);"></i> Offline rejim</li>
                 <li><i class="fas fa-check" style="color: var(--accent);"></i> AI tavsiyalar</li>
             </ul>
-            <button class="btn btn-primary" style="width: 100%;" onclick="selectPlan('premium')">Tanlash</button>
+            <button class="btn btn-primary btn-block" onclick="selectPlan('premium')">Tanlash</button>
         </div>
         
         <div class="pricing-card">
@@ -821,7 +768,7 @@ function loadPricing() {
                 <li><i class="fas fa-check" style="color: var(--accent);"></i> CME materiallari</li>
                 <li><i class="fas fa-check" style="color: var(--accent);"></i> Doktorlar klubi</li>
             </ul>
-            <button class="btn btn-outline" style="width: 100%;" onclick="selectPlan('pro')">Tanlash</button>
+            <button class="btn btn-outline btn-block" onclick="selectPlan('pro')">Tanlash</button>
         </div>
     `;
 }
@@ -840,64 +787,46 @@ function selectPlan(plan) {
     };
     
     showNotification(`✅ ${plan} rejasi tanlandi. To'lov: ${formatNumber(prices[plan])} so'm/oy`, 'success');
-    trackEvent('plan_selected', 'conversion', plan);
 }
 
 // ===== AUTHENTICATION =====
 function showLoginModal() {
-    const modal = document.getElementById('loginModal');
-    if (modal) {
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
+    document.getElementById('loginModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
 }
 
 function closeLoginModal() {
-    const modal = document.getElementById('loginModal');
-    if (modal) {
-        modal.classList.remove('active');
-        document.body.style.overflow = '';
-    }
+    document.getElementById('loginModal').classList.remove('active');
+    document.body.style.overflow = '';
 }
 
 function showRegisterModal() {
     closeLoginModal();
-    const modal = document.getElementById('registerModal');
-    if (modal) {
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
+    document.getElementById('registerModal').classList.add('active');
 }
 
 function closeRegisterModal() {
-    const modal = document.getElementById('registerModal');
-    if (modal) {
-        modal.classList.remove('active');
-        document.body.style.overflow = '';
-    }
+    document.getElementById('registerModal').classList.remove('active');
+    document.body.style.overflow = '';
 }
 
 function handleLogin(event) {
     event.preventDefault();
     
-    const email = document.getElementById('loginEmail');
-    const password = document.getElementById('loginPassword');
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
     
-    if (!email || !password) return;
-    
-    // Simple validation
-    if (!email.value || !password.value) {
+    if (!email || !password) {
         showNotification('Email va parolni kiriting', 'warning');
         return;
     }
     
     showLoading(true);
     
-    // Simulate login
     setTimeout(() => {
         currentState.user.isLoggedIn = true;
-        currentState.user.email = email.value;
-        currentState.user.name = email.value.split('@')[0];
+        currentState.user.email = email;
+        currentState.user.name = email.split('@')[0];
         currentState.user.progress.lastActive = new Date().toISOString();
         
         saveState();
@@ -909,8 +838,6 @@ function handleLogin(event) {
         }
         
         showLoading(false);
-        
-        // Update UI
         updateAuthUI();
     }, 1000);
 }
@@ -918,26 +845,23 @@ function handleLogin(event) {
 function handleRegister(event) {
     event.preventDefault();
     
-    const name = document.getElementById('registerName');
-    const email = document.getElementById('registerEmail');
-    const password = document.getElementById('registerPassword');
-    const role = document.getElementById('registerRole');
+    const name = document.getElementById('registerName').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    const role = document.getElementById('registerRole').value;
     
-    if (!name || !email || !password || !role) return;
-    
-    if (!name.value || !email.value || !password.value) {
+    if (!name || !email || !password) {
         showNotification('Barcha maydonlarni to\'ldiring', 'warning');
         return;
     }
     
     showLoading(true);
     
-    // Simulate registration
     setTimeout(() => {
         currentState.user.isLoggedIn = true;
-        currentState.user.name = name.value;
-        currentState.user.email = email.value;
-        currentState.user.role = role.value;
+        currentState.user.name = name;
+        currentState.user.email = email;
+        currentState.user.role = role;
         currentState.user.progress = {
             watchedVideos: [],
             testResults: [],
@@ -946,7 +870,7 @@ function handleRegister(event) {
         };
         
         saveState();
-        showNotification(`Tabriklaymiz, ${name.value}! Ro'yxatdan o'tish muvaffaqiyatli`, 'success');
+        showNotification(`Tabriklaymiz, ${name}! Ro'yxatdan o'tish muvaffaqiyatli`, 'success');
         closeRegisterModal();
         
         if (currentState.section === 'dashboard') {
@@ -954,8 +878,6 @@ function handleRegister(event) {
         }
         
         showLoading(false);
-        
-        // Update UI
         updateAuthUI();
     }, 1000);
 }
@@ -988,7 +910,7 @@ function updateAuthUI() {
     const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) {
         if (currentState.user.isLoggedIn) {
-            loginBtn.innerHTML = `<i class="fas fa-user-circle"></i> ${escapeHTML(currentState.user.name)}`;
+            loginBtn.innerHTML = `<i class="fas fa-user-circle"></i> ${currentState.user.name}`;
             loginBtn.onclick = () => showUserMenu();
         } else {
             loginBtn.innerHTML = `<i class="fas fa-sign-in-alt"></i> Login`;
@@ -998,18 +920,19 @@ function updateAuthUI() {
 }
 
 function showUserMenu() {
-    // Remove existing menu
-    const existing = document.querySelector('.user-menu');
-    if (existing) existing.remove();
+    const existingMenu = document.querySelector('.user-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+        return;
+    }
     
-    // Create new menu
     const menu = document.createElement('div');
     menu.className = 'user-menu';
     menu.innerHTML = `
         <div class="user-menu-content">
-            <p><strong>${escapeHTML(currentState.user.name)}</strong></p>
-            <p>${escapeHTML(currentState.user.email)}</p>
-            <p>Role: ${escapeHTML(currentState.user.role)}</p>
+            <p><strong>${currentState.user.name}</strong></p>
+            <p>${currentState.user.email}</p>
+            <p>Role: ${currentState.user.role}</p>
             <hr>
             <button onclick="logout()" class="btn btn-outline btn-block">Chiqish</button>
         </div>
@@ -1017,55 +940,20 @@ function showUserMenu() {
     
     document.body.appendChild(menu);
     
-    // Close on click outside
     setTimeout(() => {
-        function closeMenu(e) {
+        document.addEventListener('click', function closeMenu(e) {
             if (!menu.contains(e.target) && !e.target.closest('#loginBtn')) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }
-        }
-        document.addEventListener('click', closeMenu);
+        });
     }, 100);
-}
-
-// ===== ANALYTICS =====
-function trackEvent(action, category, label) {
-    // Safe tracking - don't throw error if gtag is undefined
-    try {
-        if (typeof gtag !== 'undefined' && gtag) {
-            gtag('event', action, {
-                'event_category': category,
-                'event_label': label
-            });
-        }
-    } catch (e) {
-        // Silently fail - analytics is optional
-    }
-    console.log(`📊 Track: ${category} - ${action} - ${label}`);
-}
-
-// ===== SERVICE WORKER =====
-function updateOnlineStatus() {
-    const status = navigator.onLine ? 'online' : 'offline';
-    console.log(`🌐 App is ${status}`);
-    
-    if (!navigator.onLine) {
-        showNotification('Internet aloqasi yo\'q. Offline rejimda ishlayapsiz', 'warning');
-    }
 }
 
 // ===== INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', function() {
-    // Load saved state
     loadState();
     
-    // Initialize userAnswers if needed
-    if (currentState.quiz.currentQuiz && (!currentState.quiz.userAnswers || currentState.quiz.userAnswers.length === 0)) {
-        currentState.quiz.userAnswers = new Array(currentState.quiz.currentQuiz.length).fill(null);
-    }
-    
-    // Load initial data
     loadHomeData();
     loadCourses();
     loadVideos('shorts');
@@ -1073,31 +961,20 @@ document.addEventListener('DOMContentLoaded', function() {
     loadPricing();
     loadLibrary();
     
-    // Set active nav
     document.querySelectorAll('.nav-links a').forEach(a => {
         if (a.textContent.trim() === 'Home') {
             a.classList.add('active-nav');
         }
     });
     
-    // Set current year in footer
-    const yearElement = document.getElementById('currentYear');
-    if (yearElement) {
-        yearElement.textContent = new Date().getFullYear();
-    }
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
     
-    // Update online status
-    updateOnlineStatus();
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-    
-    // Update auth UI
     updateAuthUI();
     
     console.log('✅ MEDFLOW initialized');
 });
 
-// ===== EXPORT FUNCTIONS TO GLOBAL SCOPE =====
+// ===== EXPORT FUNCTIONS =====
 window.showSection = showSection;
 window.toggleMobileMenu = toggleMobileMenu;
 window.closeMobileMenu = closeMobileMenu;
@@ -1105,7 +982,6 @@ window.filterVideos = filterVideos;
 window.playVideo = playVideo;
 window.closeVideoModal = closeVideoModal;
 window.playDemo = playDemo;
-window.openPDF = openPDF;
 window.loadQuiz = loadQuiz;
 window.selectAnswer = selectAnswer;
 window.nextQuestion = nextQuestion;
@@ -1119,5 +995,5 @@ window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;
 window.logout = logout;
 window.selectPlan = selectPlan;
+window.openPDF = openPDF;
 window.showNotification = showNotification;
-window.restartQuiz = restartQuiz;
