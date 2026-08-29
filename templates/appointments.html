@@ -1,0 +1,81 @@
+<!-- templates/appointments.html -->
+{% extends "base.html" %}
+
+{% block title %}Qabul{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Qabul (Navbatlar)</h1></div>
+    <div class="header-actions">
+        <div class="table-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Bemor yoki shifokor bo'yicha qidirish..." oninput="filterTable(this, 'appointmentsTableBody')">
+        </div>
+        {% if current_user.role in ['admin', 'reception'] %}
+        <button class="btn-primary-action" onclick="openAppointmentModal()">
+            <i class="fa-solid fa-plus"></i> Yangi Qabul
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="data-section">
+    <table class="content-table">
+        <thead>
+            <tr><th>ID</th><th>Bemor</th><th>Shifokor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th><th>Amallar</th></tr>
+        </thead>
+        <tbody id="appointmentsTableBody">
+            {% for appt in appointments %}
+            {% set can_change_status = current_user.role in ['admin', 'reception'] or (current_user.role == 'doctor' and current_user.doctor_id == appt.doctor_id) %}
+            <tr>
+                <td>#{{ appt.id }}</td>
+                <td><a class="link-name" href="/patients/{{ appt.patient_id }}">{{ appt.patient_name }}</a></td>
+                <td><a class="link-name" href="/doctors/{{ appt.doctor_id }}">{{ appt.doctor_name }}</a></td>
+                <td><i class="far fa-clock"></i> {{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ "{:,}".format(appt.price) }}</td>
+                <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
+                <td>
+                    {% if appt.status in ['completed', 'cancelled', 'no_show'] or not can_change_status %}
+                        <span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span>
+                    {% else %}
+                        <select class="status-select" onchange="updateAppointmentStatus({{ appt.id }}, this.value)">
+                            <option value="{{ appt.status }}" selected>{{ appt.status }} (joriy)</option>
+                            {% if appt.status == 'waiting' %}
+                                <option value="in_progress">Xonaga kirdi</option>
+                                <option value="delayed">Kechikayapti</option>
+                                <option value="no_show">Kelmadi</option>
+                            {% elif appt.status == 'delayed' %}
+                                <option value="waiting">Kutmoqda</option>
+                                <option value="in_progress">Xonaga kirdi</option>
+                                <option value="no_show">Kelmadi</option>
+                            {% elif appt.status == 'in_progress' %}
+                                <option value="completed" {% if appt.debt > 0 %}disabled{% endif %}>Tugadi{% if appt.debt > 0 %} (avval to'lov kerak){% endif %}</option>
+                                <option value="delayed">Kechikayapti</option>
+                            {% endif %}
+                        </select>
+                    {% endif %}
+                </td>
+                <td class="row-actions">
+                    {% if appt.debt > 0 and current_user.role in ['admin', 'reception', 'cashier'] and appt.status not in ['cancelled'] %}
+                    <button class="btn-icon-sm" title="To'lov qabul qilish" onclick="openPaymentModal({{ appt.id }})">
+                        <i class="fa-solid fa-money-bill"></i>
+                    </button>
+                    {% endif %}
+                    {% if appt.status not in ['completed', 'cancelled', 'no_show'] and current_user.role in ['admin', 'reception'] %}
+                    <button class="btn-icon-sm" title="Vaqtini ko'chirish"
+                        onclick="openAppointmentRescheduleModal({{ appt.id }}, {{ appt.scheduled_time.isoformat()|tojson }})">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </button>
+                    <button class="btn-icon-sm danger" title="Bekor qilish" onclick="openAppointmentCancelModal({{ appt.id }})">
+                        <i class="fa-solid fa-ban"></i>
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="8">Hozircha qabullar yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

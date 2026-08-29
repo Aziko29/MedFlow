@@ -1,0 +1,71 @@
+<!-- templates/dashboard.html -->
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title">
+        <h1>Bugungi Holat <span>({{ today }})</span></h1>
+    </div>
+    {% if current_user.role in ['admin', 'reception'] %}
+    <button class="btn-primary-action" onclick="openPatientModal()">
+        <i class="fa-solid fa-plus"></i> Yangi Bemor Qo'shish
+    </button>
+    {% endif %}
+</div>
+
+<div class="kpi-container">
+    <div class="kpi-card blue">
+        <div><h5>Jami bemorlar</h5><h3>{{ summary.total_patients }}</h3></div>
+        <i class="fas fa-users"></i>
+    </div>
+    <div class="kpi-card orange">
+        <div><h5>Bugungi navbat</h5><h3>{{ summary.today_waiting }}</h3></div>
+        <i class="fas fa-hourglass-half"></i>
+    </div>
+    <div class="kpi-card green">
+        <div><h5>Bugun tugagan</h5><h3>{{ summary.today_completed }}</h3></div>
+        <i class="fas fa-check-circle"></i>
+    </div>
+    <div class="kpi-card purple">
+        <div><h5>Bugungi tushum</h5><h3>{{ summary.today_revenue }}</h3></div>
+        <i class="fas fa-wallet"></i>
+    </div>
+    <div class="kpi-card red">
+        <div><h5>Jami qarzdorlik</h5><h3>{{ summary.total_debt }}</h3></div>
+        <i class="fas fa-triangle-exclamation"></i>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Jonli Kutish Zali (faqat bugungi, hali yakunlanmagan qabullar)</div>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Bemor Ismi</th><th>Shifokor</th>
+                <th>Vaqt</th><th>Qarz (UZS)</th><th>Holat</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in queue %}
+            <tr>
+                <td>{{ item.id }}</td>
+                <td><a class="link-name" href="/patients/{{ item.patient_id }}">{{ item.patient_name }}</a></td>
+                <td><a class="link-name" href="/doctors/{{ item.doctor_id }}">{{ item.doctor_name }}</a></td>
+                <td><i class="far fa-clock"></i> {{ item.time }}</td>
+                <td class="{{ 'debt-positive' if item.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(item.debt) }}</td>
+                <td>
+                    {% if item.status == 'waiting' %}<span class="status-badge status-waiting">Kutmoqda</span>
+                    {% elif item.status == 'in_progress' %}<span class="status-badge status-in_progress">Xonada</span>
+                    {% elif item.status == 'delayed' %}<span class="status-badge status-delayed">Kechikayotgan</span>
+                    {% else %}<span class="status-badge status-completed">{{ item.status }}</span>{% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bugun hech kim navbatda yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

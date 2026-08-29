@@ -1,0 +1,50 @@
+<!-- templates/doctor_detail.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ doctor.fullname }}{% endblock %}
+
+{% block content %}
+<a href="/doctors" class="back-link"><i class="fa-solid fa-arrow-left"></i> Doktorlar ro'yxatiga qaytish</a>
+
+<div class="header-container">
+    <div class="header-title"><h1>{{ doctor.fullname }} <span>#{{ doctor.id }}</span></h1></div>
+    {% if current_user.role == 'admin' %}
+    <button class="btn-secondary-action"
+        onclick='openDoctorEditModal({{ {"id": doctor.id, "fullname": doctor.fullname, "specialty": doctor.specialty, "room": doctor.room, "consultation_price": doctor.consultation_price, "working_hours": doctor.working_hours, "is_active": doctor.is_active}|tojson }})'>
+        <i class="fa-solid fa-pen"></i> Tahrirlash
+    </button>
+    {% endif %}
+</div>
+
+<div class="profile-header">
+    <div class="profile-card">
+        <h4>Mutaxassislik</h4><div class="value"><span class="badge-doctor">{{ doctor.specialty }}</span></div>
+        <h4>Xona</h4><div class="value">{{ doctor.room or "—" }}</div>
+        <h4>Konsultatsiya narxi</h4><div class="value">{{ "{:,}".format(doctor.consultation_price) }} UZS</div>
+        <h4>Ish jadvali</h4><div class="value">{{ doctor.working_hours or "—" }}</div>
+        <h4>Holati</h4>
+        <div class="value">{% if doctor.is_active %}<span class="status-badge status-completed">Faol</span>{% else %}<span class="status-badge status-cancelled">Faol emas</span>{% endif %}</div>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Qabullar</div>
+    <table class="content-table">
+        <thead><tr><th>ID</th><th>Bemor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th></tr></thead>
+        <tbody>
+            {% for appt in appointments %}
+            <tr>
+                <td>#{{ appt.id }}</td>
+                <td><a class="link-name" href="/patients/{{ appt.patient_id }}">{{ appt.patient.fullname if appt.patient else "Noma'lum" }}</a></td>
+                <td>{{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ "{:,}".format(appt.price) }}</td>
+                <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
+                <td><span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bu shifokorning hali qabuli bo'lmagan</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

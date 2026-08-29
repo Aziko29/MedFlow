@@ -1,0 +1,50 @@
+<!-- templates/reports.html -->
+{% extends "base.html" %}
+
+{% block title %}Hisobot{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Hisobot</h1></div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Bugungi ko'rsatkichlar</div>
+    <div class="report-grid">
+        <div class="report-card blue kpi-card">
+            <div><h4>Bugungi qabullar</h4><p>{{ summary.today_appointments }}</p></div>
+            <i class="fas fa-calendar-day"></i>
+        </div>
+        <div class="report-card orange kpi-card">
+            <div><h4>Bugun kutayotganlar</h4><p>{{ summary.today_waiting }}</p></div>
+            <i class="fas fa-hourglass-half"></i>
+        </div>
+        <div class="report-card green kpi-card">
+            <div><h4>Bugun tugagan qabullar</h4><p>{{ summary.today_completed }}</p></div>
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="report-card purple kpi-card">
+            <div><h4>Bugungi tushum</h4><p>{{ summary.today_revenue }}</p></div>
+            <i class="fas fa-wallet"></i>
+        </div>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Umumiy (barcha vaqt) ko'rsatkichlar</div>
+    <div class="report-grid">
+        <div class="report-card blue kpi-card">
+            <div><h4>Jami bemorlar</h4><p>{{ summary.total_patients }}</p></div>
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="report-card purple kpi-card">
+            <div><h4>Jami tushum</h4><p>{{ summary.total_revenue }}</p></div>
+            <i class="fas fa-sack-dollar"></i>
+        </div>
+        <div class="report-card red kpi-card">
+            <div><h4>Jami qarzdorlik</h4><p>{{ summary.total_debt }}</p></div>
+            <i class="fas fa-triangle-exclamation"></i>
+        </div>
+    </div>
+</div>
+{% endblock %}

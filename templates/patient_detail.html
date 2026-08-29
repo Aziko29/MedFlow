@@ -1,0 +1,186 @@
+<!-- templates/patient_detail.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ patient.fullname }}{% endblock %}
+
+{% block extra_style %}
+.result-badge { padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+.result-badge.ok { background-color: rgba(57,255,157,0.15); color: var(--accent-green); }
+.result-badge.warn { background-color: rgba(255,61,110,0.15); color: var(--danger); }
+.result-badge.legacy { background-color: rgba(124,138,168,0.15); color: var(--text-muted); }
+.view-indicator-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.view-indicator-table th, .view-indicator-table td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--border-color); text-align: left; }
+.view-indicator-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+.flag-normal { color: var(--accent-green); }
+.flag-past { color: var(--primary); }
+.flag-yuqori { color: var(--danger); }
+.flag-ogohlantirish { color: var(--danger); }
+.flag-neutral { color: var(--text-muted); }
+.modal-content.wide { width: 620px; }
+{% endblock %}
+
+{% block content %}
+<a href="/patients" class="back-link"><i class="fa-solid fa-arrow-left"></i> Bemorlar ro'yxatiga qaytish</a>
+
+<div class="header-container">
+    <div class="header-title"><h1>{{ patient.fullname }} <span>#{{ patient.id }}</span></h1></div>
+    {% if current_user.role in ['admin', 'reception'] %}
+    <button class="btn-secondary-action"
+        onclick='openPatientEditModal({{ {"id": patient.id, "fullname": patient.fullname, "phone": patient.phone, "gender": patient.gender, "birth_date": patient.birth_date.isoformat() if patient.birth_date else "", "address": patient.address, "medical_notes": patient.medical_notes}|tojson }})'>
+        <i class="fa-solid fa-pen"></i> Tahrirlash
+    </button>
+    {% endif %}
+</div>
+
+<div class="profile-header">
+    <div class="profile-card">
+        <h4>Telefon</h4><div class="value">{{ patient.phone }}</div>
+        <h4>Jinsi</h4><div class="value">{{ "Erkak" if patient.gender == "M" else ("Ayol" if patient.gender == "F" else "—") }}</div>
+        <h4>Tug'ilgan sana</h4><div class="value">{{ patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else "—" }}</div>
+        <h4>Manzil</h4><div class="value">{{ patient.address or "—" }}</div>
+        <h4>Tibbiy eslatma</h4><div class="value">{{ patient.medical_notes or "—" }}</div>
+    </div>
+    <div class="profile-card">
+        <h4>Jami hisoblangan (barcha qabullar)</h4><div class="value">{{ "{:,}".format(financials.total_charged) }} UZS</div>
+        <h4>Jami to'langan</h4><div class="value">{{ "{:,}".format(financials.total_paid) }} UZS</div>
+        <h4>Joriy qarz</h4>
+        <div class="value {{ 'debt-positive' if financials.total_debt > 0 else 'debt-zero' }}">{{ "{:,}".format(financials.total_debt) }} UZS</div>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Qabullar tarixi</div>
+    <table class="content-table">
+        <thead><tr><th>ID</th><th>Shifokor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th></tr></thead>
+        <tbody>
+            {% for appt in appointments %}
+            <tr>
+                <td>#{{ appt.id }}</td>
+                <td><a class="link-name" href="/doctors/{{ appt.doctor_id }}">{{ appt.doctor.fullname if appt.doctor else "Noma'lum" }}</a></td>
+                <td>{{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ "{:,}".format(appt.price) }}</td>
+                <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
+                <td><span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bu bemorning hali qabuli bo'lmagan</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="data-section">
+    <div class="section-title">To'lovlar tarixi</div>
+    <table class="content-table">
+        <thead><tr><th>ID</th><th>Qabul</th><th>Miqdor</th><th>Turi</th><th>Izoh</th><th>Sana</th></tr></thead>
+        <tbody>
+            {% for pay in payments %}
+            <tr>
+                <td>#{{ pay.id }}</td>
+                <td>#{{ pay.appointment_id }}</td>
+                <td>{{ "{:,}".format(pay.amount) }} UZS</td>
+                <td>
+                    {% if pay.is_refund %}<span class="status-badge status-cancelled">Qaytarim</span>
+                    {% elif pay.id in refunded_ids %}<span class="status-badge status-cancelled">To'lov (qaytarilgan)</span>
+                    {% else %}<span class="status-badge status-completed">To'lov</span>{% endif %}
+                </td>
+                <td>{{ pay.note or '—' }}</td>
+                <td>{{ pay.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bu bemorning hali to'lovi bo'lmagan</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Tahlil natijalari</div>
+    <table class="content-table">
+        <thead><tr><th>ID</th><th>Shifokor</th><th>Tahlil turi</th><th>Natija</th><th>Holat</th><th>Sana</th><th>Amallar</th></tr></thead>
+        <tbody>
+            {% for row in lab_rows %}
+            {% set r = row.obj %}
+            <tr>
+                <td>#{{ r.id }}</td>
+                <td>{{ r.doctor.fullname if r.doctor else '—' }}</td>
+                <td>{{ r.test_name }}</td>
+                <td>
+                    {% if row.parsed %}
+                        {% if row.abnormal_count and row.abnormal_count > 0 %}
+                        <span class="result-badge warn">{{ row.abnormal_count }} ta ogohlantirish</span>
+                        {% else %}
+                        <span class="result-badge ok">Me'yorda</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="result-badge legacy" title="{{ row.raw_text }}">Eski yozuv</span>
+                    {% endif %}
+                </td>
+                <td><span class="status-badge">{{ r.status }}</span></td>
+                <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="row-actions">
+                    {% if row.parsed %}
+                    <button class="btn-icon-sm" title="Batafsil" onclick='openLabViewModal({{ row.parsed|tojson }}, {{ r.test_name|tojson }}, {{ patient.fullname|tojson }})'>
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="7">Bu bemorning hali tahlil natijasi yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- ═══════════════ MODAL: Tahlil natijasini ko'rish ═══════════════ -->
+<div id="labViewModal" class="modal">
+    <div class="modal-content wide">
+        <span class="close-btn" onclick="closeModal('labViewModal')">&times;</span>
+        <h2 id="lv-title"><i class="fa-solid fa-vial"></i></h2>
+        <p id="lv-subtitle" style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;"></p>
+        <table class="view-indicator-table">
+            <thead><tr><th>Ko'rsatkich</th><th>Qiymat</th><th>Me'yor</th><th>Bayroq</th></tr></thead>
+            <tbody id="lv-indicators-body"></tbody>
+        </table>
+        <div id="lv-note-wrap" style="display:none; margin-top: 12px;">
+            <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color: var(--text-muted);">Izoh</h4>
+            <p id="lv-note" style="font-size:13px; margin-top:4px;"></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+    const FLAG_LABELS = {
+        normal: "Me'yorda", past: "Past", yuqori: "Yuqori",
+        ogohlantirish: "Diqqat", neutral: ""
+    };
+
+    // ── Tahlil natijasini batafsil ko'rish (lab_results.html'dagi bilan
+    // bir xil modal — bemor sahifasidan ham xuddi shu ma'lumot ochiladi,
+    // ya'ni ikkala joy bitta manbadan SINXRON ishlaydi) ──
+    function openLabViewModal(parsed, testName, patientName) {
+        document.getElementById('lv-title').textContent = testName;
+        document.getElementById('lv-subtitle').textContent = 'Bemor: ' + patientName;
+        const body = document.getElementById('lv-indicators-body');
+        body.innerHTML = (parsed.indicators || []).map(i => {
+            const flagLabel = FLAG_LABELS[i.flag] || '';
+            const flagClass = i.flag ? 'flag-' + i.flag : '';
+            return `<tr>
+                <td>${i.name}</td>
+                <td>${i.value}${i.unit ? ' ' + i.unit : ''}</td>
+                <td>${i.ref_range || '—'}</td>
+                <td class="${flagClass}">${flagLabel}</td>
+            </tr>`;
+        }).join('');
+        const noteWrap = document.getElementById('lv-note-wrap');
+        if (parsed.note) {
+            noteWrap.style.display = '';
+            document.getElementById('lv-note').textContent = parsed.note;
+        } else {
+            noteWrap.style.display = 'none';
+        }
+        openModal('labViewModal');
+    }
+{% endblock %}

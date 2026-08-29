@@ -1,0 +1,35 @@
+# --- Ma'lumotlar bazasi ---
+# SQLite fayli bemorlarning shaxsiy va moliyaviy ma'lumotlarini o'z ichiga
+# oladi — bu hech qachon gitga tushmasligi kerak (allaqachon push qilingan
+# bo'lsa, git rm --cached clinicflow.db bilan tarixdan ham olib tashlang).
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Sirlar ---
+.env
+.env.*
+!.env.example
+
+# --- Loglar va backuplar (fayllarning o'zi mahalliy, git'ga kerak emas) ---
+logs/
+backups/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+.env 
+.env 
+.env 
+.env 
+.coverage 

@@ -1,0 +1,40 @@
+# deploy/clinicflow.service.example
+#
+# Systemd xizmat fayli — server qayta yuklanganda ClinicFlow avtomatik
+# ishga tushishi uchun (5-band, 5.4). Faqat Linux serverlar uchun.
+#
+# O'RNATISH:
+#   1. Quyidagi <...> qavslardagi joylarni o'zingiznikiga almashtiring
+#   2. Faylni nusxalang:
+#        sudo cp deploy/clinicflow.service.example /etc/systemd/system/clinicflow.service
+#   3. Ishga tushiring:
+#        sudo systemctl daemon-reload
+#        sudo systemctl enable clinicflow      # server qayta yuklanganda avto-start
+#        sudo systemctl start clinicflow
+#   4. Holatni tekshirish:
+#        sudo systemctl status clinicflow
+#        sudo journalctl -u clinicflow -f      # jonli loglar
+
+[Unit]
+Description=ClinicFlow (MedFlow) — klinika boshqaruv tizimi
+After=network.target
+
+[Service]
+Type=simple
+User=<server_foydalanuvchi_nomi>
+WorkingDirectory=<loyiha_papkasi_toliq_yoli>
+# .env faylidagi ENV, CLINICFLOW_SECRET_KEY, DATABASE_URL shu yerdan
+# o'qiladi (python-dotenv orqali) — shu sabab EnvironmentFile shart emas,
+# lekin xohlasangiz shu qatorni ham qo'shishingiz mumkin:
+# EnvironmentFile=<loyiha_papkasi_toliq_yoli>/.env
+ExecStart=<venv_toliq_yoli>/bin/gunicorn main:app \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --access-logfile - \
+    --error-logfile -
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

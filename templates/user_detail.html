@@ -1,0 +1,78 @@
+<!-- templates/user_detail.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ target.fullname }}{% endblock %}
+
+{% block content %}
+<a href="/users" class="back-link"><i class="fa-solid fa-arrow-left"></i> Foydalanuvchilar ro'yxatiga qaytish</a>
+
+<div class="header-container">
+    <div class="header-title"><h1>{{ target.fullname }} <span>#{{ target.id }}</span></h1></div>
+    <div class="header-actions">
+        <button class="btn-secondary-action"
+            onclick='openUserEditModal({{ {"id": target.id, "username": target.username, "fullname": target.fullname, "role": target.role, "doctor_id": target.doctor_id}|tojson }})'>
+            <i class="fa-solid fa-pen"></i> Tahrirlash
+        </button>
+        <button class="btn-danger-action" onclick='confirmResetPassword({{ target.id }}, {{ target.username|tojson }})'>
+            <i class="fa-solid fa-key"></i> Parolni tiklash
+        </button>
+    </div>
+</div>
+
+<div class="profile-header">
+    <div class="profile-card">
+        <h4>Login</h4><div class="value">{{ target.username }}</div>
+        <h4>Rol</h4><div class="value"><span class="status-badge status-completed">{{ target.role }}</span></div>
+        {% if target.role == 'doctor' %}
+        <h4>Bog'langan shifokor</h4>
+        <div class="value">
+            {% if target.doctor %}<a class="link-name" href="/doctors/{{ target.doctor.id }}">{{ target.doctor.fullname }}</a>{% else %}—{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if target.role == 'doctor' %}
+<div class="data-section">
+    <div class="section-title">Qabullar (shu shifokorning barcha navbatlari)</div>
+    <table class="content-table">
+        <thead><tr><th>ID</th><th>Bemor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th></tr></thead>
+        <tbody>
+            {% for appt in appointments %}
+            <tr>
+                <td>#{{ appt.id }}</td>
+                <td><a class="link-name" href="/patients/{{ appt.patient_id }}">{{ appt.patient.fullname if appt.patient else "Noma'lum" }}</a></td>
+                <td>{{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ "{:,}".format(appt.price) }}</td>
+                <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
+                <td><span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bu shifokorning hali qabuli bo'lmagan</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="data-section">
+    <div class="section-title">So'nggi amallar (AuditLog, oxirgi {{ audit_logs|length }} ta)</div>
+    <table class="content-table">
+        <thead>
+            <tr><th>Vaqt</th><th>Amal</th><th>Obyekt</th><th>Tafsilot</th></tr>
+        </thead>
+        <tbody>
+            {% for log in audit_logs %}
+            <tr>
+                <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td><code>{{ log.action }}</code></td>
+                <td>{{ log.entity_type }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</td>
+                <td style="color:var(--text-muted); font-size: 13px;">{{ log.details or "" }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="4">Bu foydalanuvchi uchun hali audit yozuvi yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

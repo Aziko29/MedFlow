@@ -1,0 +1,58 @@
+<!-- templates/patients.html -->
+{% extends "base.html" %}
+
+{% block title %}Bemorlar{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Bemorlar</h1></div>
+    <div class="header-actions">
+        <div class="table-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="F.I.O yoki telefon bo'yicha qidirish..." oninput="filterTable(this, 'patientsTableBody')">
+        </div>
+        {% if current_user.role in ['admin', 'reception'] %}
+        <button class="btn-primary-action" onclick="openPatientModal()">
+            <i class="fa-solid fa-plus"></i> Yangi Bemor
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="data-section">
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>F.I.O</th><th>Telefon</th><th>Jinsi</th><th>Ro'yxatdan o'tgan</th>
+                {% if current_user.role in ['admin', 'reception'] %}<th>Amallar</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody id="patientsTableBody">
+            {% for p in patients %}
+            <tr>
+                <td>#{{ p.id }}</td>
+                <td><a class="link-name" href="/patients/{{ p.id }}">{{ p.fullname }}</a></td>
+                <td>{{ p.phone }}</td>
+                <td>{{ "Erkak" if p.gender == "M" else ("Ayol" if p.gender == "F" else "—") }}</td>
+                <td>{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                {% if current_user.role in ['admin', 'reception'] %}
+                <td class="row-actions">
+                    <button class="btn-icon-sm" title="Tahrirlash"
+                        onclick='openPatientEditModal({{ {"id": p.id, "fullname": p.fullname, "phone": p.phone, "gender": p.gender, "birth_date": p.birth_date.isoformat() if p.birth_date else "", "address": p.address, "medical_notes": p.medical_notes}|tojson }})'>
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    {% if current_user.role == 'admin' %}
+                    <button class="btn-icon-sm danger" title="O'chirish" onclick="deletePatient({{ p.id }})">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Hozircha bemorlar yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

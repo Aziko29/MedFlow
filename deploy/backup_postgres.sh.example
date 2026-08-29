@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# deploy/backup_postgres.sh.example
+#
+# 5-band (5.3): DATABASE_URL PostgreSQL'ga o'rnatilgan bo'lsa ishlatiladigan
+# backup skripti. SQLite bilan ishlayotgan bo'lsangiz buning o'rniga
+# backup_sqlite.py'ni ishlating.
+#
+# O'RNATISH:
+#   1. <...> qavslardagi joylarni to'ldiring
+#   2. chmod +x deploy/backup_postgres.sh
+#   3. Kunlik cron:
+#        0 3 * * * /path/to/MedFlow/deploy/backup_postgres.sh
+#
+# Yoki bulutli host ishlatsangiz (masalan managed PostgreSQL — RDS,
+# DigitalOcean Managed DB va h.k.), ko'pincha provayderning o'z
+# avtomatik backup xizmatini yoqish shu skriptdan ko'ra qulayroq va
+# ishonchliroq.
+
+set -euo pipefail
+
+DB_NAME="<baza_nomi>"
+DB_USER="<foydalanuvchi>"
+DB_HOST="<host>"           # masalan localhost
+BACKUP_DIR="<backup_papkasi_toliq_yoli>"
+KEEP_DAYS=30
+
+mkdir -p "$BACKUP_DIR"
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/clinicflow_${TIMESTAMP}.sql.gz"
+
+pg_dump -h "$DB_HOST" -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_FILE"
+echo "✅ Backup yaratildi: $BACKUP_FILE"
+
+# KEEP_DAYS kundan eski backuplarni o'chirish
+find "$BACKUP_DIR" -name "clinicflow_*.sql.gz" -mtime +$KEEP_DAYS -delete
+echo "🗑️ ${KEEP_DAYS} kundan eski backuplar tozalandi."
