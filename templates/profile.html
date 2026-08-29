@@ -1,0 +1,110 @@
+<!-- templates/profile.html -->
+{% extends "base.html" %}
+
+{% block title %}Sozlamalar{% endblock %}
+
+{% block extra_style %}
+.quick-links-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;
+}
+.quick-link-card {
+    background: var(--bg-panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--border-color); border-radius: 4px; padding: 18px; text-decoration: none;
+    color: var(--text-dark); display: flex; gap: 14px; align-items: flex-start; transition: all 0.2s;
+}
+.quick-link-card:hover { border-color: var(--primary); box-shadow: 0 8px 20px rgba(0,229,255,0.12); transform: translateY(-2px); }
+.quick-link-card i { font-size: 20px; color: var(--primary); margin-top: 2px; flex-shrink: 0; }
+.quick-link-card .qlc-label { font-weight: 600; margin-bottom: 4px; }
+.quick-link-card .qlc-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
+
+.pw-progress-track {
+    width: 100%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06);
+    overflow: hidden; margin: 10px 0 6px;
+}
+.pw-progress-fill { height: 100%; border-radius: 4px; background: var(--accent-green); transition: width 0.3s ease; }
+.pw-progress-fill.warn { background: #ff9f43; }
+.pw-progress-fill.danger { background: var(--danger); }
+.pw-note { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+.pw-warning-box {
+    background: rgba(255,61,110,0.1); border: 1px solid rgba(255,61,110,0.3); color: #ff9fb6;
+    border-radius: 4px; padding: 14px 16px; font-size: 13.5px; line-height: 1.55; margin-top: 12px;
+}
+.pw-warning-box i { color: var(--danger); margin-right: 6px; }
+{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title">
+        <h1>Sozlamalar <span>Mening profilim</span></h1>
+    </div>
+</div>
+
+<div class="profile-header">
+    <div class="profile-card">
+        <h4>Login</h4><div class="value">{{ current_user.username }}</div>
+        <h4>F.I.O</h4><div class="value">{{ current_user.fullname }}</div>
+        <h4>Rol</h4><div class="value"><span class="status-badge status-completed">{{ current_user.role }}</span></div>
+        {% if current_user.role == 'doctor' %}
+        <h4>Bog'langan shifokor</h4>
+        <div class="value">
+            {% if current_user.doctor %}<a class="link-name" href="/doctors/{{ current_user.doctor.id }}">{{ current_user.doctor.fullname }}</a>{% else %}—{% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="profile-card" style="flex: 1.4; min-width: 320px;">
+        <h4>Parol xavfsizligi</h4>
+        <div class="value" style="margin-bottom: 4px;">
+            O'z profilingizdan almashtirgan: {{ changes_used }} / {{ password_limit }}
+        </div>
+        <div class="pw-progress-track">
+            <div class="pw-progress-fill {% if changes_remaining == 0 %}danger{% elif changes_remaining == 1 %}warn{% endif %}"
+                 style="width: {{ (changes_used / password_limit * 100) if password_limit else 0 }}%;"></div>
+        </div>
+
+        {% if limit_reached %}
+        <div class="pw-warning-box">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <strong>Ruxsat etilgan limit tugadi.</strong>
+            Siz o'z profilingizdan parolni ketma-ket {{ password_limit }} marta allaqachon almashtirgansiz.
+            Xavfsizlik siyosatiga ko'ra, keyingi almashtirish uchun <strong>administrator bilan uchrashishingiz</strong>
+            kerak — bu qoida hisobingizga faqat siz emas, boshqa birov ham kirib, kuzatuvdan qochish uchun parolni
+            qayta-qayta o'zgartirishi mumkinligining oldini oladi. Administrator sizga yangi vaqtinchalik parol
+            bergach (u buni "Foydalanuvchilar" bo'limidan "Parolni tiklash" tugmasi orqali qiladi), bu hisoblagich
+            0'ga qaytadi va sizga yana {{ password_limit }} marta o'z parolingizni o'zingiz almashtirish imkoni beriladi.
+        </div>
+        <button class="btn-secondary-action" disabled style="margin-top: 14px; opacity: 0.55; cursor: not-allowed;">
+            <i class="fa-solid fa-key"></i> Parolni o'zgartirish (limit tugadi)
+        </button>
+        {% else %}
+        <p class="pw-note">
+            {% if changes_remaining == 1 %}
+            Diqqat: bu — sizning oxirgi ({{ password_limit }}-) ruxsat etilgan o'z-o'zidan almashtirishingiz.
+            Undan keyin parolni faqat administrator orqali (yangi vaqtinchalik parol bilan) almashtira olasiz.
+            {% else %}
+            Xavfsizlik uchun, har bir xodim o'z profilidan ketma-ket ko'pi bilan {{ password_limit }} marta parolni
+            o'zi almashtira oladi. Shundan keyin administrator tasdig'i (yangi vaqtinchalik parol) talab qilinadi.
+            {% endif %}
+        </p>
+        <button class="btn-primary-action" style="margin-top: 14px;" onclick="openChangePasswordModal()">
+            <i class="fa-solid fa-key"></i> Parolni o'zgartirish
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Kerakli menular</div>
+    <div class="quick-links-grid">
+        {% for link in quick_links %}
+        <a class="quick-link-card" href="{{ link.href }}">
+            <i class="fa-solid {{ link.icon }}"></i>
+            <div>
+                <div class="qlc-label">{{ link.label }}</div>
+                <div class="qlc-desc">{{ link.desc }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

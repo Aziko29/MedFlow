@@ -50,6 +50,7 @@ from database import get_db
 # boshidan qayta ishga tushirib, shu modulni chala import qilib qo'yardi
 # (batafsil: rate_limiter.py'dagi izohga qarang).
 from rate_limiter import limiter
+from models import SELF_PASSWORD_CHANGE_LIMIT
 
 # ⬅️ YANGI (2-band, 2.3): production'da cookie faqat HTTPS orqali
 # yuborilishi (`secure=True`) uchun.
@@ -240,14 +241,14 @@ def check_session(
 # PAROLNI YANGILASH (YANGI ENDPOINT)
 # ==============================================
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=schemas.ChangePasswordResult)
 def change_password(
     payload: schemas.ChangePasswordRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user)
-) -> Dict[str, str]:
+) -> schemas.ChangePasswordResult:
     """
-    Parolni yangilash.
+    Parolni yangilash (xodimning o'zi, "Sozlamalar" sahifasidan).
     ✅ Xavfsizlik uchun eski parolni tekshiradi
     ✅ Endi JSON body (schemas.ChangePasswordRequest) qabul qiladi —
        avval bu ikki parametr oddiy funksiya argumenti bo'lgani uchun
@@ -255,21 +256,76 @@ def change_password(
        (/api/auth/change-password?old_password=...&new_password=...),
        ya'ni parollar serverning access log'iga va brauzer tarixiga
        tushib qolar edi.
+
+    🔐 YANGI — o'z-o'zidan parol almashtirish limiti (3-band, "Sozlamalar
+    paneli"): agar xodim so'nggi admin tekshiruvidan (yoki hisob
+    yaratilganidan) beri parolni ALLAQACHON SELF_PASSWORD_CHANGE_LIMIT
+    (3) marta o'zi almashtirgan bo'lsa, keyingi (4-) urinish rad etiladi
+    — xodim administrator bilan bog'lanishi va undan yangi vaqtinchalik
+    parol olishi kerak. Buning sababi: parol o'zi tomonidan cheksiz
+    marta almashtirilishi hisobning haqiqiy egasi tomonidan
+    boshqarilayotganiga shubha tug'diradi (masalan, hisobga ruxsatsiz
+    kirib olgan kishi kuzatuvdan qochish uchun parolni qayta-qayta
+    o'zgartirishi mumkin) — admin tasdig'i orqali qayta tekshiruv
+    (identifikatsiya) nuqtasi qo'yiladi. Admin admin-reset-password
+    orqali yangi vaqtinchalik parol bergach, hisoblagich 0'ga qaytadi va
+    xodimga yana 3 marta imkon beriladi.
     """
     # Eski parolni tekshirish
     if not verify_password(payload.old_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Eski parol noto'g'ri")
-    
+
+    if user.self_password_change_count >= SELF_PASSWORD_CHANGE_LIMIT:
+        logger.warning(
+            f"⛔ Self-service password change blocked (limit reached): {user.username}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Siz o'z profilingizdan parolni ketma-ket {SELF_PASSWORD_CHANGE_LIMIT} marta "
+                "allaqachon almashtirgansiz. Xavfsizlik siyosatiga ko'ra, 4-marta almashtirish "
+                "uchun administrator bilan uchrashishingiz tavsiya etiladi — u sizga yangi "
+                "vaqtinchalik parol beradi, shundan so'ng yana "
+                f"{SELF_PASSWORD_CHANGE_LIMIT} marta o'z parolingizni o'zingiz almashtira olasiz."
+            ),
+        )
+
     # Yangi parolni xeshlash
     user.password_hash = hash_password(payload.new_password)
+    user.self_password_change_count += 1
     db.commit()
-    
+    db.refresh(user)
+
     # Cache'ni tozalash — endi bu login uchun ishlatiladigan HAQIQIY kesh
     clear_user_cache(user.username)
-    
-    logger.info(f"🔐 Password changed for: {user.username}")
-    log_action(db, user, "user.change_password", "User", user.id, "o'zi tomonidan")
-    return {"status": "ok", "message": "Parol muvaffaqiyatli yangilandi"}
+
+    remaining = max(SELF_PASSWORD_CHANGE_LIMIT - user.self_password_change_count, 0)
+    logger.info(
+        f"🔐 Password changed for: {user.username} "
+        f"({user.self_password_change_count}/{SELF_PASSWORD_CHANGE_LIMIT} ishlatildi)"
+    )
+    log_action(
+        db, user, "user.change_password", "User", user.id,
+        f"o'zi tomonidan ({user.self_password_change_count}/{SELF_PASSWORD_CHANGE_LIMIT})",
+    )
+    if remaining == 0:
+        message = (
+            "Parol muvaffaqiyatli yangilandi. Diqqat: bu — sizning ruxsat etilgan so'nggi "
+            "o'z-o'zidan almashtirishingiz edi. Keyingi safar parolni faqat administrator "
+            "orqali (yangi vaqtinchalik parol bilan) almashtira olasiz."
+        )
+    else:
+        message = (
+            f"Parol muvaffaqiyatli yangilandi. Yana {remaining} marta o'z profilingizdan "
+            "parolni almashtirish imkoningiz bor."
+        )
+
+    return schemas.ChangePasswordResult(
+        message=message,
+        changes_used=user.self_password_change_count,
+        changes_remaining=remaining,
+        limit=SELF_PASSWORD_CHANGE_LIMIT,
+    )
 
 # ==============================================
 # 👥 FOYDALANUVCHILAR RO'YXATI (faqat admin) — Users boshqaruv sahifasi
@@ -468,6 +524,11 @@ def admin_reset_password(
 
     temp_password = secrets.token_urlsafe(9)  # ~12 belgili, o'qish/yozish qulay
     target.password_hash = hash_password(temp_password)
+    # 🔐 Admin tekshiruv nuqtasi o'tdi — xodimning o'z-o'zidan parol
+    # almashtirish hisoblagichi shu yerda 0'ga qaytariladi, unga yana
+    # SELF_PASSWORD_CHANGE_LIMIT (3) marta o'zi almashtirish imkoni
+    # ochiladi (qarang: modules/auth_module.py change_password()).
+    target.self_password_change_count = 0
     db.commit()
     clear_user_cache(target.username)
 

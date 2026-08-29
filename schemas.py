@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import re
 
-from models import APPOINTMENT_STATUSES, USER_ROLES
+from models import APPOINTMENT_STATUSES, SELF_PASSWORD_CHANGE_LIMIT, USER_ROLES
 
 _USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -30,6 +30,17 @@ class CurrentUser(BaseModel):
     fullname: str
     role: str
     doctor_id: Optional[int] = None
+
+
+class ChangePasswordResult(BaseModel):
+    """POST /api/auth/change-password javobi — xodim "Sozlamalar"
+    sahifasida qancha marta o'zi parolni almashtirganini va yana nechta
+    imkoni qolganini ko'rishi uchun (SELF_PASSWORD_CHANGE_LIMIT, 3-band)."""
+    status: str = "ok"
+    message: str
+    changes_used: int
+    changes_remaining: int
+    limit: int = SELF_PASSWORD_CHANGE_LIMIT
 
 
 class ChangePasswordRequest(BaseModel):
@@ -291,6 +302,21 @@ class AuditLogPage(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+# ── Zaxira nusxa / Backup (admin) ──────────────────────────────────────
+class BackupDestination(BaseModel):
+    type: str  # "folder" | "network" | "external"
+    path: str = ""
+    enabled: bool = False
+
+
+class BackupSettingsUpdate(BaseModel):
+    destinations: list[BackupDestination] = Field(default_factory=list)
+
+
+class BackupPathCheck(BaseModel):
+    path: str = ""
 
 
 # ── Admin parol tiklash (6-band, UX) ─────────────────────────────────

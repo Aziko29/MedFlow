@@ -1,0 +1,24 @@
+{
+  "destinations": [
+    {
+      "type": "folder",
+      "label": "Papka (shu kompyuterda)",
+      "path": "D:\\Desktop\\BackUp",
+      "enabled": false
+    },
+    {
+      "type": "network",
+      "label": "Tarmoqdagi boshqa kompyuter",
+      "path": "",
+      "enabled": false
+    },
+    {
+      "type": "external",
+      "label": "Tashqi xotira (flesh/disk)",
+      "path": "",
+      "enabled": false
+    }
+  ],
+  "schedule_hour": 23,
+  "schedule_minute": 0
+}

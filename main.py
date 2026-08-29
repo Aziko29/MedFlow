@@ -30,6 +30,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.orm import Session
 
 import models
+import schemas
+from models import SELF_PASSWORD_CHANGE_LIMIT
 from auth import get_current_user_optional, get_cache_stats, clear_user_cache
 from rate_limiter import limiter
 from database import engine as db_engine
@@ -41,6 +43,7 @@ from modules.patients import compute_financials, list_patients
 from modules.payments import list_payments
 from modules.lab_results import _parse_result_data
 from reminder_service import start_reminder_service, stop_reminder_service
+import backup_manager
 
 # ==============================================
 # LOGGING SOZLAMALARI
@@ -116,10 +119,12 @@ models.Base.metadata.create_all(bind=db_engine)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     start_reminder_service()
+    backup_manager.start_backup_scheduler()
     try:
         yield
     finally:
         stop_reminder_service()
+        backup_manager.stop_backup_scheduler()
 
 
 app = FastAPI(
@@ -568,6 +573,81 @@ def reports_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     )
 
 # ==============================================
+# ⚙️ SOZLAMALAR — har bir xodim uchun o'z profili paneli
+#
+# Bu — /users (faqat admin, hamma xodimlarni ko'radi/tahrirlaydi) dan
+# FARQLI: bu yerda HAR QANDAY tizimga kirgan xodim FAQAT o'zining
+# ma'lumotlarini ko'radi va faqat o'ziga tegishli amallarni bajaradi
+# (parolni almashtirish). "Kerakli menular" — xodimning ROLIGA mos
+# bo'limlarga tezkor havolalar (masalan shifokorga to'lovlar ko'rsatilmaydi,
+# chunki /payments unga baribir 403 qaytaradi — qarang: payments_page).
+# ==============================================
+
+def _quick_links_for_role(role: str) -> list[dict]:
+    all_links = [
+        {"key": "dashboard", "href": "/dashboard", "icon": "fa-chart-pie", "label": "Dashboard",
+         "desc": "Bugungi navbat va umumiy statistika"},
+        {"key": "patients", "href": "/patients", "icon": "fa-user-injured", "label": "Bemorlar",
+         "desc": "Bemorlar ro'yxati va tarixi"},
+        {"key": "appointments", "href": "/appointments", "icon": "fa-calendar-check", "label": "Qabul",
+         "desc": "Navbatlarni band qilish va boshqarish"},
+        {"key": "doctors", "href": "/doctors", "icon": "fa-user-md", "label": "Doktorlar",
+         "desc": "Shifokorlar va ularning jadvali"},
+        {"key": "lab_results", "href": "/lab-results/", "icon": "fa-vial", "label": "Tahlil natijalari",
+         "desc": "Laboratoriya natijalarini ko'rish/kiritish"},
+        {"key": "payments", "href": "/payments", "icon": "fa-credit-card", "label": "To'lovlar",
+         "desc": "To'lov va qaytarimlar"},
+        {"key": "reports", "href": "/reports", "icon": "fa-file-invoice-dollar", "label": "Hisobot",
+         "desc": "Moliyaviy va statistik hisobotlar"},
+        {"key": "users", "href": "/users", "icon": "fa-users-gear", "label": "Foydalanuvchilar",
+         "desc": "Xodimlarni boshqarish (admin)"},
+        {"key": "audit_log", "href": "/admin/audit-log", "icon": "fa-clipboard-list", "label": "Audit jurnal",
+         "desc": "Kim, qachon, nima qildi (admin)"},
+        {"key": "backup", "href": "/admin/backup", "icon": "fa-database", "label": "Zaxira nusxa",
+         "desc": "Bazani avtomatik/qo'lda zaxiralash (admin)"},
+    ]
+    # Rolga ko'ra qaysi bo'limlar shu xodimga tegishli/ko'rinadigan —
+    # base.html sidebar'idagi ko'rinish mantig'i bilan bir xil (7- va
+    # 9-izohlarga qarang: shifokorda to'lov yo'q, admin-only bo'limlar
+    # faqat admin uchun).
+    visible_by_role = {
+        "admin": {"dashboard", "patients", "appointments", "doctors", "lab_results",
+                  "payments", "reports", "users", "audit_log", "backup"},
+        "reception": {"dashboard", "patients", "appointments", "doctors", "lab_results",
+                      "payments", "reports"},
+        "cashier": {"dashboard", "patients", "appointments", "doctors", "lab_results",
+                    "payments", "reports"},
+        "doctor": {"dashboard", "patients", "appointments", "doctors", "lab_results", "reports"},
+    }
+    allowed = visible_by_role.get(role, {"dashboard"})
+    return [link for link in all_links if link["key"] in allowed]
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    user = get_current_user_optional(request.cookies.get("cf_session"), db)
+    if user is None:
+        return RedirectResponse(url="/login")
+
+    changes_used = user.self_password_change_count
+    changes_remaining = max(SELF_PASSWORD_CHANGE_LIMIT - changes_used, 0)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="profile.html",
+        context=_ctx(
+            request, user, "profile",
+            {
+                "quick_links": _quick_links_for_role(user.role),
+                "password_limit": SELF_PASSWORD_CHANGE_LIMIT,
+                "changes_used": changes_used,
+                "changes_remaining": changes_remaining,
+                "limit_reached": changes_remaining == 0,
+            },
+        ),
+    )
+
+# ==============================================
 # 🏠 ROOT
 # ==============================================
 
@@ -673,6 +753,76 @@ def audit_log_page(
             {"logs": logs, "total": total, "page": page, "total_pages": total_pages},
         ),
     )
+
+# ==============================================
+# 🗄️ ZAXIRA NUSXA (BACKUP) — faqat admin
+# ==============================================
+
+def _require_admin(request: Request, db: Session) -> models.User:
+    user = get_current_user_optional(request.cookies.get("cf_session"), db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Kirish talab qilinadi")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Faqat admin uchun")
+    return user
+
+
+@app.get("/admin/backup", response_class=HTMLResponse)
+def backup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    user = get_current_user_optional(request.cookies.get("cf_session"), db)
+    if user is None:
+        return RedirectResponse(url="/login")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Faqat admin uchun")
+
+    status = backup_manager.get_status()
+    history = backup_manager.get_history(limit=15)
+    return templates.TemplateResponse(
+        request=request,
+        name="backup.html",
+        context=_ctx(request, user, "backup", {"status": status, "history": history}),
+    )
+
+
+@app.post("/admin/backup/settings")
+def backup_save_settings(
+    payload: schemas.BackupSettingsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user = _require_admin(request, db)
+    destinations = [d.model_dump() for d in payload.destinations]
+    settings = backup_manager.save_settings(destinations)
+    enabled = [d["label"] for d in settings["destinations"] if d.get("enabled")]
+    log_action(db, user, "backup_settings_update", "backup", None,
+               f"Yoqilgan manzillar: {', '.join(enabled) if enabled else 'yo\u2019q'}")
+    return {"status": "ok", "settings": settings}
+
+
+@app.post("/admin/backup/check-path")
+def backup_check_path(
+    payload: schemas.BackupPathCheck,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_admin(request, db)
+    return backup_manager.check_path(payload.path)
+
+
+@app.post("/admin/backup/run")
+def backup_run_now(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user = _require_admin(request, db)
+    result = backup_manager.run_backup(trigger="manual", actor=user.username)
+    if result.get("ok"):
+        log_action(db, user, "backup_manual_run", "backup", None,
+                   f"Fayl: {result.get('filename')}, hajmi: {result.get('size_bytes')} bayt")
+    else:
+        log_action(db, user, "backup_manual_run_failed", "backup", None,
+                   f"Xato: {result.get('error')}")
+    return result
 
 # ==============================================
 # 👥 FOYDALANUVCHILAR (Users) — faqat admin

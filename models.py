@@ -74,6 +74,15 @@ APPOINTMENT_TRANSITIONS = {
 
 USER_ROLES = ("admin", "reception", "doctor", "cashier")
 
+# ── Xodimning o'z profilida parolni almashtirish limiti ──────────────
+# Xodim o'z profilidan ("Sozlamalar" sahifasi) ketma-ket ko'pi bilan shu
+# marta parolni o'zi almashtira oladi. Shu limitga yetgach, tizim uni
+# admin bilan bog'lanishga yo'naltiradi — admin admin-reset-password
+# orqali yangi vaqtinchalik parol bergach, User.self_password_change_count
+# 0'ga qaytariladi va xodimga yana SELF_PASSWORD_CHANGE_LIMIT marta o'zi
+# almashtirish imkoni beriladi (qarang: modules/auth_module.py).
+SELF_PASSWORD_CHANGE_LIMIT = 3
+
 
 class User(Base):
     """🔐 Tizim foydalanuvchilari — rol asosida ruxsatlar (reception,
@@ -90,6 +99,14 @@ class User(Base):
     # Agar rol="doctor" bo'lsa, shu foydalanuvchi qaysi Doctor yozuviga mos
     # kelishini bildiradi (shifokor faqat o'z navbatlarini ko'rishi uchun).
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=True)
+
+    # 🔐 Xodimning "Sozlamalar" sahifasidan o'zi nechta marta parolni
+    # ketma-ket almashtirganini sanaydi (SELF_PASSWORD_CHANGE_LIMIT bilan
+    # solishtiriladi). Admin admin-reset-password orqali vaqtinchalik
+    # parol berganda yoki xodim yangi qo'shilganda 0'ga qaytariladi —
+    # shu bilan bu "ketma-ket, oxirgi admin tekshiruvidan beri" hisoblagich
+    # bo'lib qoladi, umrbod cheklov emas.
+    self_password_change_count = Column(Integer, nullable=False, default=0)
 
     doctor = relationship("Doctor", back_populates="user_account")
 

@@ -275,7 +275,14 @@
             <li class="menu-item {% if active_page == 'audit_log' %}active{% endif %}">
                 <a href="/admin/audit-log"><i class="fa-solid fa-clipboard-list"></i> Audit jurnal</a>
             </li>
+            <li class="menu-item {% if active_page == 'backup' %}active{% endif %}">
+                <a href="/admin/backup"><i class="fa-solid fa-database"></i> Zaxira nusxa</a>
+            </li>
             {% endif %}
+            {# ⚙️ Sozlamalar — har bir rolga ko'rinadi, o'z profili + parolni almashtirish #}
+            <li class="menu-item {% if active_page == 'profile' %}active{% endif %}">
+                <a href="/profile"><i class="fa-solid fa-gear"></i> Sozlamalar</a>
+            </li>
         </ul>
         <div class="sidebar-footer">ClinicFlow Core Engine</div>
     </div>
@@ -1030,7 +1037,7 @@
             }
             btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
             try {
-                await fetchJSON('/api/auth/change-password', {
+                const result = await fetchJSON('/api/auth/change-password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1039,7 +1046,12 @@
                     })
                 });
                 closeModal('changePasswordModal');
-                alert("Parol muvaffaqiyatli yangilandi.");
+                alert(result && result.message ? result.message : "Parol muvaffaqiyatli yangilandi.");
+                // Agar "Sozlamalar" (/profile) sahifasida bo'lsak, ishlatilgan/qolgan
+                // hisoblagichni yangilash uchun sahifani qayta yuklaymiz.
+                if (window.location.pathname === '/profile') {
+                    location.reload();
+                }
             } catch (err) {
                 setFormError('changePasswordFormError', err.message);
             } finally {
@@ -1216,6 +1228,55 @@
 
         {% block scripts %}{% endblock %}
     </script>
+
+    {% if current_user %}
+    <script>
+        // ══════════════════════════════════════════════════════════════
+        // 🕐 SESSIYA / TIMEOUT XAVFSIZLIGI — Frontend Inactivity Timer
+        //
+        // 15 daqiqa davomida sichqoncha/klaviatura harakati bo'lmasa,
+        // foydalanuvchi avtomatik tizimdan chiqariladi: localStorage va
+        // sessionStorage tozalanadi, server tomonidagi sessiya cookie'si
+        // (/api/auth/logout orqali) bekor qilinadi va /login sahifasiga
+        // qaytariladi. Bu — backenddagi 8 soatlik token muddatidan
+        // MUSTAQIL, qo'shimcha himoya qatlami: ekran qulflanmagan holda
+        // stol yonida qoldirilgan kompyuterdan ruxsatsiz foydalanishning
+        // oldini oladi.
+        // ══════════════════════════════════════════════════════════════
+        (function () {
+            const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 daqiqa
+            let inactivityTimer = null;
+            let loggingOut = false;
+
+            function clearClientStorage() {
+                try { localStorage.clear(); } catch (e) { /* ignore */ }
+                try { sessionStorage.clear(); } catch (e) { /* ignore */ }
+            }
+
+            async function handleInactivityTimeout() {
+                if (loggingOut) return;
+                loggingOut = true;
+                clearClientStorage();
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+                } catch (e) { /* server bilan bog'lanib bo'lmasa ham, baribir /login'ga o'tamiz */ }
+                window.location.href = '/login?reason=timeout';
+            }
+
+            function resetInactivityTimer() {
+                if (loggingOut) return;
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                inactivityTimer = setTimeout(handleInactivityTimeout, INACTIVITY_LIMIT_MS);
+            }
+
+            ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (evt) {
+                document.addEventListener(evt, resetInactivityTimer, { passive: true });
+            });
+
+            resetInactivityTimer();
+        })();
+    </script>
+    {% endif %}
 
     <script>
         console.log('%c⚡ ClinicFlow — Neon Protocol Active', 'color:#00e5ff;font-size:16px;font-weight:bold;text-shadow:0 0 8px #00e5ff;');

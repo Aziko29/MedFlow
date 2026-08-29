@@ -71,6 +71,17 @@
     </div>
 
     <script>
+        // ⏱️ Frontend inactivity timer /login?reason=timeout ga
+        // yo'naltirgan bo'lsa, buni tushunarli xabar bilan ko'rsatamiz.
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('reason') === 'timeout') {
+                const errBox = document.getElementById('loginError');
+                errBox.textContent = "15 daqiqa harakatsizlik sababli sessiya avtomatik yakunlandi. Xavfsizlik uchun qayta kiring.";
+                errBox.style.display = 'block';
+            }
+        })();
+
         async function submitLogin(event) {
             event.preventDefault();
             const btn = document.getElementById('loginBtn');

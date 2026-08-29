@@ -39,7 +39,16 @@ if not SECRET_KEY:
     )
 
 SESSION_COOKIE_NAME = "cf_session"
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 12  # 12 soat
+# ⬅️ TUZATILDI (Sessiya/Timeout xavfsizligi, "darhol bajarilishi kerak"):
+# 12 soat → 8 soat (bitta odatiy ish kuni davomiyligi). Bu qiymat HAM
+# cookie'ning max_age'i (login()da), HAM signed-token ichidagi muddat
+# tekshiruvi (_read_session_token pastda) uchun YAGONA manba — shuning
+# uchun bitta joyda o'zgartirish ikkalasiga ham ta'sir qiladi. Muddat
+# o'tgach _read_session_token None qaytaradi → get_current_user 401
+# tashlaydi, get_current_user_optional esa None qaytarib GUI sahifalarni
+# /login'ga yo'naltiradi (main.py) — API ham, brauzer sahifalari ham
+# qayta login talab qiladi.
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 soat (bitta ish kuni)
 
 # ==============================================
 # PAROL XESHLASH — ARGON2ID
