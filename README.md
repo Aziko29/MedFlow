@@ -122,8 +122,7 @@ MedFlow/
 ├── rate_limiter.py               # slowapi Limiter (brute-force himoyasi)
 ├── lab_templates.py                # 20 ta standart tahlil shabloni (ko'rsatkichlar, me'yorlar)
 ├── main.py                          # FastAPI kirish nuqtasi + dinamik modul dvigateli + GUI
-├── create_admin.py                    # Doctor yozuvi yaratish skripti
-├── create_users.py                      # Login hisoblarini yaratish/yangilash skripti
+├── create_users.py                      # Foydalanuvchilarni boshqarish: qo'shish/yangilash, ro'yxat, o'chirish
 ├── migrate_passwords.py                   # Parol xeshlash migratsiyasi (audit skript)
 ├── backup_sqlite.py                         # SQLite backup skripti
 ├── rotate_keys.py                             # Shifrlash kalitlarini rotatsiya qilish
