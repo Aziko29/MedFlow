@@ -1,0 +1,50 @@
+<!-- templates/portal/payments.html -->
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To'lovlar tarixim · MedFlow</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    {% include "portal/_style.html" %}
+</head>
+<body>
+    {% include "portal/_nav.html" %}
+
+    <main class="portal-main">
+        <h1 class="page-title">To'lovlar tarixim</h1>
+
+        {% if payments %}
+        <div class="card-list">
+            {% for p in payments %}
+            <div class="item-card">
+                <div class="item-row">
+                    <div class="item-main">
+                        <div class="item-title {{ 'amount-refund' if p.is_refund else 'amount-positive' }}">
+                            {{ '-' if p.is_refund else '+' }}{{ "{:,}".format(p.amount).replace(',', ' ') }} so'm
+                        </div>
+                        <div class="item-sub">
+                            {% if p.appointment and p.appointment.doctor %}{{ p.appointment.doctor.fullname }}{% endif %}
+                        </div>
+                    </div>
+                    {% if p.is_refund %}
+                    <span class="status-badge status-cancelled">Qaytarilgan</span>
+                    {% endif %}
+                </div>
+                <div class="item-meta">
+                    <span><i class="fa-regular fa-calendar"></i> {{ p.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                    {% if p.note %}<span><i class="fa-regular fa-note-sticky"></i> {{ p.note }}</span>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fa-solid fa-receipt"></i>
+            <p>Hozircha to'lovlar tarixi mavjud emas.</p>
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

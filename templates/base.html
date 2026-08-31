@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Dashboard{% endblock %} · ClinicFlow</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -190,6 +191,8 @@
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); outline: none; box-shadow: var(--glow); }
         .form-hint { font-size: 12px; color: var(--text-muted); }
         .form-error { display: none; background: rgba(255,61,110,0.12); color: #ff6b8f; padding: 10px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 16px; border: 1px solid rgba(255,61,110,0.3); }
+        .field-error { border-color: var(--danger) !important; }
+        .field-error-text { color: var(--danger); font-size: 12px; margin-top: 4px; }
         .btn-save { background: var(--accent-green); color: #04150c; border: none; width: 100%; padding: 12px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 16px; box-shadow: 0 0 16px rgba(57,255,157,0.3); transition: all 0.2s; }
         .btn-save:hover { background: #5dffb0; box-shadow: 0 0 22px rgba(57,255,157,0.5); }
         .btn-save:disabled { background: var(--text-muted); box-shadow: none; cursor: not-allowed; }
@@ -217,6 +220,36 @@
         ::-webkit-scrollbar-track { background: var(--bg-void); }
         ::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.25); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.45); }
+
+        /* 🔔 Global toast bildirishnomalar (base.html: showToast()) */
+        #toastContainer {
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            display: flex; flex-direction: column; gap: 10px;
+            pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 10px;
+            min-width: 260px; max-width: 380px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            background: var(--bg-panel-solid);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            color: var(--text-dark);
+            font-size: 14px; font-weight: 500;
+            transform: translateX(120%);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); opacity: 1; }
+        .toast.hide { transform: translateX(120%); opacity: 0; }
+        .toast i { font-size: 18px; flex-shrink: 0; }
+        .toast.toast-success { border-color: rgba(57, 255, 157, 0.35); }
+        .toast.toast-success i { color: var(--accent-green); }
+        .toast.toast-error { border-color: rgba(255, 61, 110, 0.35); }
+        .toast.toast-error i { color: var(--danger); }
+        .toast span { flex: 1; line-height: 1.4; }
 
         {% block extra_style %}{% endblock %}
 
@@ -265,10 +298,10 @@
                 <a href="/payments"><i class="fa-solid fa-credit-card"></i> To'lovlar</a>
             </li>
             {% endif %}
+            {% if current_user.role == 'admin' %}
             <li class="menu-item {% if active_page == 'reports' %}active{% endif %}">
                 <a href="/reports"><i class="fa-solid fa-file-invoice-dollar"></i> Hisobot</a>
             </li>
-            {% if current_user.role == 'admin' %}
             <li class="menu-item {% if active_page == 'users' %}active{% endif %}">
                 <a href="/users"><i class="fa-solid fa-users-gear"></i> Foydalanuvchilar</a>
             </li>
@@ -305,7 +338,7 @@
                 </div>
                 <div class="form-group">
                     <label for="p-phone">Telefon raqami:</label>
-                    <input type="text" id="p-phone" required placeholder="Masalan: +998901234567">
+                    <input type="text" id="p-phone" required pattern="^\+998[0-9]{9}$" placeholder="+998901234567" title="Format: +998901234567">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -325,6 +358,30 @@
                     <label for="p-notes">Tibbiy eslatma (ixtiyoriy):</label>
                     <textarea id="p-notes" rows="2" placeholder="Masalan: Penitsillinga allergiya"></textarea>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p-blood">Qon guruhi:</label>
+                        <select id="p-blood">
+                            <option value="">— Tanlanmagan —</option>
+                            <option value="A+">A+</option>
+                            <option value="A-">A-</option>
+                            <option value="B+">B+</option>
+                            <option value="B-">B-</option>
+                            <option value="AB+">AB+</option>
+                            <option value="AB-">AB-</option>
+                            <option value="O+">O+</option>
+                            <option value="O-">O-</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p-ec-phone">Favqulodda kontakt telefoni:</label>
+                        <input type="text" id="p-ec-phone" pattern="^\+998[0-9]{9}$" placeholder="+998901234567" title="Format: +998901234567">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="p-ec-name">Favqulodda kontakt F.I.O:</label>
+                    <input type="text" id="p-ec-name" placeholder="Masalan: Aliyeva Malika (onasi)">
+                </div>
                 <button type="submit" class="btn-save" id="patientSaveBtn">Saqlash</button>
             </form>
         </div>
@@ -339,7 +396,7 @@
             <form id="patientEditForm" onsubmit="submitPatientEdit(event)">
                 <input type="hidden" id="pe-id">
                 <div class="form-group"><label for="pe-fio">F.I.O:</label><input type="text" id="pe-fio" required></div>
-                <div class="form-group"><label for="pe-phone">Telefon:</label><input type="text" id="pe-phone" required></div>
+                <div class="form-group"><label for="pe-phone">Telefon:</label><input type="text" id="pe-phone" required pattern="^\+998[0-9]{9}$" placeholder="+998901234567" title="Format: +998901234567"></div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="pe-gender">Jinsi:</label>
@@ -349,6 +406,24 @@
                 </div>
                 <div class="form-group"><label for="pe-address">Manzil:</label><input type="text" id="pe-address"></div>
                 <div class="form-group"><label for="pe-notes">Tibbiy eslatma:</label><textarea id="pe-notes" rows="2"></textarea></div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="pe-blood">Qon guruhi:</label>
+                        <select id="pe-blood">
+                            <option value="">— Tanlanmagan —</option>
+                            <option value="A+">A+</option>
+                            <option value="A-">A-</option>
+                            <option value="B+">B+</option>
+                            <option value="B-">B-</option>
+                            <option value="AB+">AB+</option>
+                            <option value="AB-">AB-</option>
+                            <option value="O+">O+</option>
+                            <option value="O-">O-</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label for="pe-ec-phone">Favqulodda kontakt telefoni:</label><input type="text" id="pe-ec-phone" pattern="^\+998[0-9]{9}$" placeholder="+998901234567" title="Format: +998901234567"></div>
+                </div>
+                <div class="form-group"><label for="pe-ec-name">Favqulodda kontakt F.I.O:</label><input type="text" id="pe-ec-name"></div>
                 <button type="submit" class="btn-save" id="patientEditSaveBtn">Saqlash</button>
             </form>
         </div>
@@ -368,6 +443,19 @@
                     <div class="form-group"><label for="d-price">Konsultatsiya narxi (UZS):</label><input type="number" id="d-price" min="0" required placeholder="Masalan: 120000"></div>
                 </div>
                 <div class="form-group"><label for="d-hours">Ish jadvali:</label><input type="text" id="d-hours" placeholder="Masalan: Du-Ju 09:00-18:00"></div>
+                <div class="form-row">
+                    <div class="form-group"><label for="d-license">Litsenziya raqami:</label><input type="text" id="d-license" placeholder="Masalan: LIC-2024-0451"></div>
+                    <div class="form-group"><label for="d-experience">Ish tajribasi (yil):</label><input type="number" id="d-experience" min="0" max="80" placeholder="Masalan: 12"></div>
+                </div>
+                <div class="form-group">
+                    <label for="d-qualification">Malaka toifasi:</label>
+                    <select id="d-qualification">
+                        <option value="">— Tanlanmagan —</option>
+                        <option value="Oliy toifa">Oliy toifa</option>
+                        <option value="Birinchi toifa">Birinchi toifa</option>
+                        <option value="Ikkinchi toifa">Ikkinchi toifa</option>
+                    </select>
+                </div>
                 <button type="submit" class="btn-save" id="doctorSaveBtn">Saqlash</button>
             </form>
         </div>
@@ -388,6 +476,19 @@
                     <div class="form-group"><label for="de-price">Narxi (UZS):</label><input type="number" id="de-price" min="0" required></div>
                 </div>
                 <div class="form-group"><label for="de-hours">Ish jadvali:</label><input type="text" id="de-hours"></div>
+                <div class="form-row">
+                    <div class="form-group"><label for="de-license">Litsenziya raqami:</label><input type="text" id="de-license" placeholder="Masalan: LIC-2024-0451"></div>
+                    <div class="form-group"><label for="de-experience">Ish tajribasi (yil):</label><input type="number" id="de-experience" min="0" max="80"></div>
+                </div>
+                <div class="form-group">
+                    <label for="de-qualification">Malaka toifasi:</label>
+                    <select id="de-qualification">
+                        <option value="">— Tanlanmagan —</option>
+                        <option value="Oliy toifa">Oliy toifa</option>
+                        <option value="Birinchi toifa">Birinchi toifa</option>
+                        <option value="Ikkinchi toifa">Ikkinchi toifa</option>
+                    </select>
+                </div>
                 <div class="form-group">
                     <label><input type="checkbox" id="de-active" style="width:auto;"> Faol (bemor qabul qilmoqda)</label>
                 </div>
@@ -637,7 +738,11 @@
                 const message = body && body.detail
                     ? (typeof body.detail === 'string' ? body.detail : "Ma'lumotlar noto'g'ri kiritildi")
                     : `Xatolik (${response.status})`;
-                throw new Error(message);
+                const error = new Error(message);
+                if (body && Array.isArray(body.detail)) {
+                    error.fieldErrors = body.detail;
+                }
+                throw error;
             }
             return body;
         }
@@ -653,6 +758,54 @@
             box.textContent = message;
             box.style.display = 'block';
         }
+
+        // 🔴 Maydon-darajasidagi validatsiya xatolari (422 Pydantic javobi).
+        // fieldMap: backend maydon nomi -> input id prefiksidan keyingi qism
+        // (masalan "blood_type" -> "blood", ya'ni #p-blood / #pe-blood).
+        function clearFieldErrors(prefix, fieldMap) {
+            Object.values(fieldMap).forEach(function (suffix) {
+                const input = document.getElementById(prefix + suffix);
+                if (!input) return;
+                input.classList.remove('field-error');
+                const msgEl = document.getElementById(prefix + suffix + '-err');
+                if (msgEl) msgEl.remove();
+            });
+        }
+
+        function applyFieldErrors(prefix, fieldMap, detail) {
+            if (!Array.isArray(detail)) return false;
+            let applied = false;
+            detail.forEach(function (item) {
+                const field = item.loc && item.loc[item.loc.length - 1];
+                const suffix = fieldMap[field];
+                if (!suffix) return;
+                const input = document.getElementById(prefix + suffix);
+                if (!input) return;
+                input.classList.add('field-error');
+                let msgEl = document.getElementById(prefix + suffix + '-err');
+                if (!msgEl) {
+                    msgEl = document.createElement('div');
+                    msgEl.id = prefix + suffix + '-err';
+                    msgEl.className = 'field-error-text';
+                    input.insertAdjacentElement('afterend', msgEl);
+                }
+                msgEl.textContent = item.msg || "Noto'g'ri qiymat";
+                applied = true;
+            });
+            return applied;
+        }
+
+        const PATIENT_FIELD_MAP = {
+            fullname: 'fio',
+            phone: 'phone',
+            gender: 'gender',
+            birth_date: 'birthdate',
+            address: 'address',
+            medical_notes: 'notes',
+            blood_type: 'blood',
+            emergency_contact_name: 'ec-name',
+            emergency_contact_phone: 'ec-phone'
+        };
 
         function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
         function openModal(modalId) { document.getElementById(modalId).style.display = 'flex'; }
@@ -708,6 +861,7 @@
         // ── Bemor qo'shish ──
         function openPatientModal() {
             setFormError('patientFormError', null);
+            clearFieldErrors('p-', PATIENT_FIELD_MAP);
             document.getElementById('patientForm').reset();
             openModal('patientModal');
         }
@@ -716,6 +870,7 @@
             event.preventDefault();
             const btn = document.getElementById('patientSaveBtn');
             setFormError('patientFormError', null);
+            clearFieldErrors('p-', PATIENT_FIELD_MAP);
             btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
             try {
                 await fetchJSON('/api/patients/add', {
@@ -727,13 +882,20 @@
                         gender: document.getElementById('p-gender').value || null,
                         birth_date: document.getElementById('p-birthdate').value || null,
                         address: document.getElementById('p-address').value.trim() || null,
-                        medical_notes: document.getElementById('p-notes').value.trim() || null
+                        medical_notes: document.getElementById('p-notes').value.trim() || null,
+                        blood_type: document.getElementById('p-blood').value.trim().toUpperCase() || null,
+                        emergency_contact_name: document.getElementById('p-ec-name').value.trim() || null,
+                        emergency_contact_phone: document.getElementById('p-ec-phone').value.trim() || null
                     })
                 });
                 closeModal('patientModal');
                 location.reload();
             } catch (err) {
-                setFormError('patientFormError', err.message);
+                if (err.fieldErrors && applyFieldErrors('p-', PATIENT_FIELD_MAP, err.fieldErrors)) {
+                    setFormError('patientFormError', "Formada xatoliklar bor, belgilangan maydonlarni tekshiring");
+                } else {
+                    setFormError('patientFormError', err.message);
+                }
             } finally {
                 btn.disabled = false; btn.textContent = 'Saqlash';
             }
@@ -742,6 +904,7 @@
         // ── Bemorni tahrirlash ──
         function openPatientEditModal(p) {
             setFormError('patientEditFormError', null);
+            clearFieldErrors('pe-', PATIENT_FIELD_MAP);
             document.getElementById('pe-id').value = p.id;
             document.getElementById('pe-fio').value = p.fullname;
             document.getElementById('pe-phone').value = p.phone;
@@ -749,6 +912,9 @@
             document.getElementById('pe-birthdate').value = p.birth_date || '';
             document.getElementById('pe-address').value = p.address || '';
             document.getElementById('pe-notes').value = p.medical_notes || '';
+            document.getElementById('pe-blood').value = p.blood_type || '';
+            document.getElementById('pe-ec-name').value = p.emergency_contact_name || '';
+            document.getElementById('pe-ec-phone').value = p.emergency_contact_phone || '';
             openModal('patientEditModal');
         }
 
@@ -756,6 +922,7 @@
             event.preventDefault();
             const btn = document.getElementById('patientEditSaveBtn');
             setFormError('patientEditFormError', null);
+            clearFieldErrors('pe-', PATIENT_FIELD_MAP);
             btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
             const id = document.getElementById('pe-id').value;
             try {
@@ -768,13 +935,20 @@
                         gender: document.getElementById('pe-gender').value || null,
                         birth_date: document.getElementById('pe-birthdate').value || null,
                         address: document.getElementById('pe-address').value.trim() || null,
-                        medical_notes: document.getElementById('pe-notes').value.trim() || null
+                        medical_notes: document.getElementById('pe-notes').value.trim() || null,
+                        blood_type: document.getElementById('pe-blood').value.trim().toUpperCase() || null,
+                        emergency_contact_name: document.getElementById('pe-ec-name').value.trim() || null,
+                        emergency_contact_phone: document.getElementById('pe-ec-phone').value.trim() || null
                     })
                 });
                 closeModal('patientEditModal');
                 location.reload();
             } catch (err) {
-                setFormError('patientEditFormError', err.message);
+                if (err.fieldErrors && applyFieldErrors('pe-', PATIENT_FIELD_MAP, err.fieldErrors)) {
+                    setFormError('patientEditFormError', "Formada xatoliklar bor, belgilangan maydonlarni tekshiring");
+                } else {
+                    setFormError('patientEditFormError', err.message);
+                }
             } finally {
                 btn.disabled = false; btn.textContent = 'Saqlash';
             }
@@ -786,7 +960,7 @@
                 await fetchJSON(`/api/patients/${id}`, { method: 'DELETE' });
                 location.reload();
             } catch (err) {
-                alert("O'chirishda xatolik: " + err.message);
+                showToast("O'chirishda xatolik: " + err.message, "error");
             }
         }
 
@@ -811,7 +985,10 @@
                         specialty: document.getElementById('d-specialty').value.trim(),
                         room: document.getElementById('d-room').value.trim() || null,
                         consultation_price: parseInt(document.getElementById('d-price').value, 10) || 0,
-                        working_hours: document.getElementById('d-hours').value.trim() || null
+                        working_hours: document.getElementById('d-hours').value.trim() || null,
+                        license_number: document.getElementById('d-license').value.trim() || null,
+                        experience_years: document.getElementById('d-experience').value ? parseInt(document.getElementById('d-experience').value, 10) : null,
+                        qualification_category: document.getElementById('d-qualification').value || null
                     })
                 });
                 closeModal('doctorModal');
@@ -832,6 +1009,9 @@
             document.getElementById('de-room').value = d.room || '';
             document.getElementById('de-price').value = d.consultation_price;
             document.getElementById('de-hours').value = d.working_hours || '';
+            document.getElementById('de-license').value = d.license_number || '';
+            document.getElementById('de-experience').value = (d.experience_years === null || d.experience_years === undefined) ? '' : d.experience_years;
+            document.getElementById('de-qualification').value = d.qualification_category || '';
             document.getElementById('de-active').checked = d.is_active;
             openModal('doctorEditModal');
         }
@@ -852,6 +1032,9 @@
                         room: document.getElementById('de-room').value.trim() || null,
                         consultation_price: parseInt(document.getElementById('de-price').value, 10) || 0,
                         working_hours: document.getElementById('de-hours').value.trim() || null,
+                        license_number: document.getElementById('de-license').value.trim() || null,
+                        experience_years: document.getElementById('de-experience').value ? parseInt(document.getElementById('de-experience').value, 10) : null,
+                        qualification_category: document.getElementById('de-qualification').value || null,
                         is_active: document.getElementById('de-active').checked
                     })
                 });
@@ -870,7 +1053,7 @@
                 await fetchJSON(`/api/doctors/${id}`, { method: 'DELETE' });
                 location.reload();
             } catch (err) {
-                alert("O'chirishda xatolik: " + err.message);
+                showToast("O'chirishda xatolik: " + err.message, "error");
             }
         }
 
@@ -970,7 +1153,7 @@
                 await fetchJSON(`/api/auth/users/${id}`, { method: 'DELETE' });
                 location.reload();
             } catch (err) {
-                alert("O'chirishda xatolik: " + err.message);
+                showToast("O'chirishda xatolik: " + err.message, "error");
             }
         }
 
@@ -995,7 +1178,7 @@
                 const result = await fetchJSON(`/api/auth/admin-reset-password/${userId}`, { method: 'POST' });
                 openTempPasswordModal(result.temporary_password, false);
             } catch (e) {
-                alert(e.message || "Parolni tiklashda xatolik yuz berdi");
+                showToast(e.message || "Parolni tiklashda xatolik yuz berdi", "error");
             }
         }
 
@@ -1046,7 +1229,7 @@
                     })
                 });
                 closeModal('changePasswordModal');
-                alert(result && result.message ? result.message : "Parol muvaffaqiyatli yangilandi.");
+                showToast(result && result.message ? result.message : "Parol muvaffaqiyatli yangilandi.", "success");
                 // Agar "Sozlamalar" (/profile) sahifasida bo'lsak, ishlatilgan/qolgan
                 // hisoblagichni yangilash uchun sahifani qayta yuklaymiz.
                 if (window.location.pathname === '/profile') {
@@ -1101,7 +1284,7 @@
                 });
                 location.reload();
             } catch (err) {
-                alert("Holatni yangilashda xatolik: " + err.message);
+                showToast("Holatni yangilashda xatolik: " + err.message, "error");
                 location.reload();
             }
         }
@@ -1222,7 +1405,7 @@
                 await fetchJSON(`/api/payments/${id}/refund`, { method: 'PATCH' });
                 location.reload();
             } catch (err) {
-                alert("Qaytarishda xatolik: " + err.message);
+                showToast("Qaytarishda xatolik: " + err.message, "error");
             }
         }
 
@@ -1277,6 +1460,26 @@
         })();
     </script>
     {% endif %}
+
+    <div id="toastContainer"></div>
+
+    <script>
+        function showToast(message, type) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast toast-' + (type === 'success' ? 'success' : 'error');
+            const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
+            toast.innerHTML = '<i class="fa-solid ' + icon + '"></i><span></span>';
+            toast.querySelector('span').textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(function () { toast.classList.add('show'); });
+            setTimeout(function () {
+                toast.classList.remove('show');
+                toast.classList.add('hide');
+                setTimeout(function () { toast.remove(); }, 300);
+            }, 3500);
+        }
+    </script>
 
     <script>
         console.log('%c⚡ ClinicFlow — Neon Protocol Active', 'color:#00e5ff;font-size:16px;font-weight:bold;text-shadow:0 0 8px #00e5ff;');

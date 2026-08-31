@@ -3,14 +3,46 @@
 
 {% block title %}{{ doctor.fullname }}{% endblock %}
 
+{% block extra_style %}
+.doctor-header-row { display: flex; align-items: center; gap: 20px; flex: 1; min-width: 260px; }
+.doctor-avatar-lg {
+    width: 88px; height: 88px; border-radius: 50%; flex-shrink: 0; position: relative;
+    background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 32px; color: #05070d;
+    background-color: var(--primary);
+    background-image: linear-gradient(135deg, var(--primary), var(--accent-violet));
+    border: 2px solid var(--border-color);
+}
+.doctor-avatar-lg .photo-upload-btn {
+    position: absolute; bottom: -2px; right: -2px; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--bg-panel-solid); border: 1px solid var(--border-color); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px;
+    transition: all 0.2s;
+}
+.doctor-avatar-lg .photo-upload-btn:hover { background: rgba(0,229,255,0.15); box-shadow: var(--glow); }
+{% endblock %}
+
 {% block content %}
 <a href="/doctors" class="back-link"><i class="fa-solid fa-arrow-left"></i> Doktorlar ro'yxatiga qaytish</a>
 
 <div class="header-container">
-    <div class="header-title"><h1>{{ doctor.fullname }} <span>#{{ doctor.id }}</span></h1></div>
+    <div class="doctor-header-row">
+        <div class="doctor-avatar-lg" id="doctorAvatarLg"
+             {% if doctor.photo_path %}style="background-image: url('{{ doctor.photo_path }}');"{% endif %}>
+            {% if not doctor.photo_path %}{{ doctor.fullname[0]|upper }}{% endif %}
+            {% if current_user.role == 'admin' %}
+            <span class="photo-upload-btn" title="Rasm yuklash" onclick="document.getElementById('doctorPhotoInput').click()">
+                <i class="fa-solid fa-camera"></i>
+            </span>
+            <input type="file" id="doctorPhotoInput" accept="image/jpeg,image/png" style="display:none;" onchange="uploadDoctorPhoto(event)">
+            {% endif %}
+        </div>
+        <div class="header-title"><h1>{{ doctor.fullname }} <span>#{{ doctor.id }}</span></h1></div>
+    </div>
     {% if current_user.role == 'admin' %}
     <button class="btn-secondary-action"
-        onclick='openDoctorEditModal({{ {"id": doctor.id, "fullname": doctor.fullname, "specialty": doctor.specialty, "room": doctor.room, "consultation_price": doctor.consultation_price, "working_hours": doctor.working_hours, "is_active": doctor.is_active}|tojson }})'>
+        onclick='openDoctorEditModal({{ {"id": doctor.id, "fullname": doctor.fullname, "specialty": doctor.specialty, "room": doctor.room, "consultation_price": doctor.consultation_price, "working_hours": doctor.working_hours, "is_active": doctor.is_active, "license_number": doctor.license_number, "experience_years": doctor.experience_years, "qualification_category": doctor.qualification_category}|tojson }})'>
         <i class="fa-solid fa-pen"></i> Tahrirlash
     </button>
     {% endif %}
@@ -22,6 +54,9 @@
         <h4>Xona</h4><div class="value">{{ doctor.room or "—" }}</div>
         <h4>Konsultatsiya narxi</h4><div class="value">{{ "{:,}".format(doctor.consultation_price) }} UZS</div>
         <h4>Ish jadvali</h4><div class="value">{{ doctor.working_hours or "—" }}</div>
+        <h4>Litsenziya raqami</h4><div class="value">{{ doctor.license_number or "—" }}</div>
+        <h4>Ish tajribasi</h4><div class="value">{{ (doctor.experience_years ~ " yil") if doctor.experience_years is not none else "—" }}</div>
+        <h4>Malaka toifasi</h4><div class="value">{{ doctor.qualification_category or "—" }}</div>
         <h4>Holati</h4>
         <div class="value">{% if doctor.is_active %}<span class="status-badge status-completed">Faol</span>{% else %}<span class="status-badge status-cancelled">Faol emas</span>{% endif %}</div>
     </div>
@@ -47,4 +82,43 @@
         </tbody>
     </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ── Shifokor rasmi yuklash — patient_detail.html dagi
+    // uploadPatientPhoto bilan bir xil pattern, faqat faqat admin uchun
+    // (tugma/input shablonda shu shart bilan o'ralgan). ──
+    async function uploadDoctorPhoto(event) {
+        const input = event.target;
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+        if (!allowedTypes.includes(file.type)) {
+            showToast("Faqat JPG yoki PNG formatidagi rasm qabul qilinadi", "error");
+            input.value = '';
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            showToast("Rasm hajmi 2MB dan oshmasligi kerak", "error");
+            input.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            await fetchJSON('/api/doctors/{{ doctor.id }}/photo', {
+                method: 'POST',
+                body: formData
+            });
+            location.reload();
+        } catch (err) {
+            showToast("Rasm yuklashda xatolik: " + err.message, "error");
+        } finally {
+            input.value = '';
+        }
+    }
+</script>
 {% endblock %}

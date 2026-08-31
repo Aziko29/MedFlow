@@ -11,6 +11,11 @@
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="text" placeholder="Bemor bo'yicha qidirish..." oninput="filterTable(this, 'paymentsTableBody')">
         </div>
+        {% if current_user.role in ['admin', 'cashier'] %}
+        <a href="/api/payments/export/csv" class="btn-secondary-action">
+            <i class="fa-solid fa-file-csv"></i> CSV yuklab olish
+        </a>
+        {% endif %}
         {% if current_user.role in ['admin', 'reception', 'cashier'] %}
         <button class="btn-primary-action" onclick="openPaymentModal()">
             <i class="fa-solid fa-plus"></i> Yangi To'lov

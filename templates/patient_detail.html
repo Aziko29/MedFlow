@@ -17,120 +17,396 @@
 .flag-ogohlantirish { color: var(--danger); }
 .flag-neutral { color: var(--text-muted); }
 .modal-content.wide { width: 620px; }
+.allergy-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,61,110,0.12);
+    border: 1px solid rgba(255,61,110,0.35);
+    color: var(--danger);
+    font-weight: 600;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+.allergy-banner i { font-size: 18px; }
+.severity-badge { padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+.severity-badge.sev-yengil { background: rgba(57,255,157,0.15); color: var(--accent-green); }
+.severity-badge.sev-orta { background: rgba(255,196,0,0.15); color: #ffc400; }
+.severity-badge.sev-ogir { background: rgba(255,61,110,0.15); color: var(--danger); }
+
+.patient-header-row { display: flex; align-items: center; gap: 20px; flex: 1; min-width: 260px; }
+.patient-avatar-lg {
+    width: 88px; height: 88px; border-radius: 50%; flex-shrink: 0; position: relative;
+    background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 32px; color: #05070d;
+    background-color: var(--primary);
+    background-image: linear-gradient(135deg, var(--primary), var(--accent-violet));
+    border: 2px solid var(--border-color);
+}
+.patient-avatar-lg .photo-upload-btn {
+    position: absolute; bottom: -2px; right: -2px; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--bg-panel-solid); border: 1px solid var(--border-color); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px;
+    transition: all 0.2s;
+}
+.patient-avatar-lg .photo-upload-btn:hover { background: rgba(0,229,255,0.15); box-shadow: var(--glow); }
+
+/* 🗂️ Bemor profili tab'lari (Prompt: "bemor profilini tab'larga bo'l") */
+.tabs-nav {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 24px;
+}
+.tab-btn {
+    background: none; border: none; font-family: inherit; cursor: pointer;
+    color: var(--text-muted); font-weight: 600; font-size: 14px;
+    padding: 12px 18px; border-bottom: 2px solid transparent; transition: all 0.2s;
+    display: flex; align-items: center; gap: 8px;
+}
+.tab-btn:hover { color: var(--text-dark); }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); text-shadow: var(--glow); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* 💊 Davolanishlar — vaqt chizig'i (timeline) ko'rinishi */
+.timeline { position: relative; padding-left: 26px; }
+.timeline::before {
+    content: ''; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
+    background: var(--border-color);
+}
+.timeline-item { position: relative; margin-bottom: 18px; }
+.timeline-item::before {
+    content: ''; position: absolute; left: -26px; top: 6px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--primary); box-shadow: var(--glow); border: 2px solid var(--bg-void);
+}
+.timeline-date { font-size: 12px; color: var(--primary); font-weight: 700; margin-bottom: 6px; letter-spacing: 0.03em; }
+.timeline-card {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+    border-radius: 6px; padding: 14px 16px;
+}
+.timeline-card h4 { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; font-weight: 600; }
+.timeline-card p { font-size: 14px; margin-bottom: 12px; white-space: pre-wrap; }
+.timeline-card p:last-of-type { margin-bottom: 0; }
+.timeline-meta { font-size: 12px; color: var(--text-muted); margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
 {% endblock %}
 
 {% block content %}
 <a href="/patients" class="back-link"><i class="fa-solid fa-arrow-left"></i> Bemorlar ro'yxatiga qaytish</a>
 
 <div class="header-container">
-    <div class="header-title"><h1>{{ patient.fullname }} <span>#{{ patient.id }}</span></h1></div>
+    <div class="patient-header-row">
+        <div class="patient-avatar-lg" id="patientAvatarLg"
+             {% if patient.photo_path %}style="background-image: url('{{ patient.photo_path }}');"{% endif %}>
+            {% if not patient.photo_path %}{{ patient.fullname[0]|upper }}{% endif %}
+            {% if current_user.role in ['admin', 'reception'] %}
+            <span class="photo-upload-btn" title="Rasm yuklash" onclick="document.getElementById('patientPhotoInput').click()">
+                <i class="fa-solid fa-camera"></i>
+            </span>
+            <input type="file" id="patientPhotoInput" accept="image/jpeg,image/png" style="display:none;" onchange="uploadPatientPhoto(event)">
+            {% endif %}
+        </div>
+        <div class="header-title"><h1>{{ patient.fullname }} <span>#{{ patient.id }}</span></h1></div>
+    </div>
     {% if current_user.role in ['admin', 'reception'] %}
     <button class="btn-secondary-action"
-        onclick='openPatientEditModal({{ {"id": patient.id, "fullname": patient.fullname, "phone": patient.phone, "gender": patient.gender, "birth_date": patient.birth_date.isoformat() if patient.birth_date else "", "address": patient.address, "medical_notes": patient.medical_notes}|tojson }})'>
+        onclick='openPatientEditModal({{ {"id": patient.id, "fullname": patient.fullname, "phone": patient.phone, "gender": patient.gender, "birth_date": patient.birth_date.isoformat() if patient.birth_date else "", "address": patient.address, "medical_notes": patient.medical_notes, "blood_type": patient.blood_type, "emergency_contact_name": patient.emergency_contact_name, "emergency_contact_phone": patient.emergency_contact_phone}|tojson }})'>
         <i class="fa-solid fa-pen"></i> Tahrirlash
     </button>
     {% endif %}
 </div>
 
-<div class="profile-header">
-    <div class="profile-card">
-        <h4>Telefon</h4><div class="value">{{ patient.phone }}</div>
-        <h4>Jinsi</h4><div class="value">{{ "Erkak" if patient.gender == "M" else ("Ayol" if patient.gender == "F" else "—") }}</div>
-        <h4>Tug'ilgan sana</h4><div class="value">{{ patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else "—" }}</div>
-        <h4>Manzil</h4><div class="value">{{ patient.address or "—" }}</div>
-        <h4>Tibbiy eslatma</h4><div class="value">{{ patient.medical_notes or "—" }}</div>
+{% if allergies %}
+<div class="allergy-banner">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <span>Allergiya: {{ allergies|map(attribute='substance')|join(', ') }}</span>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════ TAB NAVIGATSIYASI ═══════════════════════
+     Rol asosida shart bo'yicha render qilinadi (Jinja2 if): cashier
+     uchun faqat Umumiy/Tashriflar/To'lovlar ko'rinadi — Tibbiy tarix,
+     Davolanishlar va Tahlillar (tibbiy tafsilotlar) yashiringan. -->
+<div class="tabs-nav">
+    <button class="tab-btn active" id="tab-btn-umumiy" onclick="showPatientTab('umumiy')">
+        <i class="fa-solid fa-id-card"></i> Umumiy
+    </button>
+    {% if current_user.role in ['admin', 'reception', 'doctor'] %}
+    <button class="tab-btn" id="tab-btn-tibbiy" onclick="showPatientTab('tibbiy')">
+        <i class="fa-solid fa-notes-medical"></i> Tibbiy tarix
+    </button>
+    <button class="tab-btn" id="tab-btn-davolanish" onclick="showPatientTab('davolanish')">
+        <i class="fa-solid fa-timeline"></i> Davolanishlar
+    </button>
+    {% endif %}
+    <button class="tab-btn" id="tab-btn-tashrif" onclick="showPatientTab('tashrif')">
+        <i class="fa-solid fa-calendar-check"></i> Tashriflar
+    </button>
+    {% if current_user.role in ['admin', 'reception', 'doctor'] %}
+    <button class="tab-btn" id="tab-btn-tahlil" onclick="showPatientTab('tahlil')">
+        <i class="fa-solid fa-vial"></i> Tahlillar
+    </button>
+    {% endif %}
+    <button class="tab-btn" id="tab-btn-tolov" onclick="showPatientTab('tolov')">
+        <i class="fa-solid fa-money-bill-wave"></i> To'lovlar
+    </button>
+</div>
+
+<!-- ═══════════════════════ 1) UMUMIY ═══════════════════════════════
+     Shaxsiy ma'lumot, rasm (yuqoridagi header'da), qon guruhi,
+     favqulodda kontakt — barcha rollarga ko'rinadi. -->
+<div class="tab-pane active" id="tab-umumiy">
+    <div class="profile-header">
+        <div class="profile-card">
+            <h4>Telefon</h4><div class="value">{{ patient.phone }}</div>
+            <h4>Jinsi</h4><div class="value">{{ "Erkak" if patient.gender == "M" else ("Ayol" if patient.gender == "F" else "—") }}</div>
+            <h4>Tug'ilgan sana</h4><div class="value">{{ patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else "—" }}{% if patient_age is not none %} ({{ patient_age }} yosh){% endif %}</div>
+            <h4>Manzil</h4><div class="value">{{ patient.address or "—" }}</div>
+            {# 🚨 Qon guruhi / favqulodda kontakt — barcha rollarga (admin/
+               reception/doctor/cashier) ochiq, chunki bu shaxsiy ma'lumot
+               emas va favqulodda holatda zarur bo'lishi mumkin. #}
+            <h4>Qon guruhi</h4><div class="value">{{ patient.blood_type or "—" }}</div>
+            <h4>Favqulodda kontakt</h4>
+            <div class="value">
+                {% if patient.emergency_contact_name or patient.emergency_contact_phone %}
+                    {{ patient.emergency_contact_name or "—" }}{% if patient.emergency_contact_phone %} · {{ patient.emergency_contact_phone }}{% endif %}
+                {% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="profile-card">
+            <h4>Ro'yxatdan o'tgan sana</h4><div class="value">{{ patient.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            <h4>Jami hisoblangan (barcha qabullar)</h4><div class="value">{{ "{:,}".format(financials.total_charged) }} UZS</div>
+            <h4>Jami to'langan</h4><div class="value">{{ "{:,}".format(financials.total_paid) }} UZS</div>
+            <h4>Joriy qarz</h4>
+            <div class="value {{ 'debt-positive' if financials.total_debt > 0 else 'debt-zero' }}">{{ "{:,}".format(financials.total_debt) }} UZS</div>
+        </div>
     </div>
-    <div class="profile-card">
-        <h4>Jami hisoblangan (barcha qabullar)</h4><div class="value">{{ "{:,}".format(financials.total_charged) }} UZS</div>
-        <h4>Jami to'langan</h4><div class="value">{{ "{:,}".format(financials.total_paid) }} UZS</div>
-        <h4>Joriy qarz</h4>
-        <div class="value {{ 'debt-positive' if financials.total_debt > 0 else 'debt-zero' }}">{{ "{:,}".format(financials.total_debt) }} UZS</div>
+</div>
+
+{% if current_user.role in ['admin', 'reception', 'doctor'] %}
+<!-- ═══════════════════════ 2) TIBBIY TARIX ══════════════════════════
+     Allergiya + ChronicCondition (Prompt 1) + tibbiy eslatma.
+     Cashier bu tab'ni umuman ko'rmaydi (yuqoridagi tugma ham, bu
+     bo'lim ham shart bo'yicha o'ralgan, Jinja2 if). -->
+<div class="tab-pane" id="tab-tibbiy">
+    <div class="data-section">
+        <div class="section-title">Tibbiy eslatma</div>
+        <div class="value">{{ patient.medical_notes or "Tibbiy eslatma kiritilmagan" }}</div>
+    </div>
+
+    <div class="data-section">
+        <div class="header-container" style="margin-bottom: 16px;">
+            <div class="section-title" style="margin-bottom: 0;">Allergiyalar</div>
+            {% if current_user.role in ['admin', 'reception', 'doctor'] %}
+            <button class="btn-secondary-action" onclick="openAllergyModal()">
+                <i class="fa-solid fa-plus"></i> Allergiya qo'shish
+            </button>
+            {% endif %}
+        </div>
+        <table class="content-table">
+            <thead><tr><th>ID</th><th>Modda</th><th>Reaksiya</th><th>Og'irlik darajasi</th><th>Qayd etilgan sana</th><th>Amallar</th></tr></thead>
+            <tbody>
+                {% for a in allergies %}
+                {% set sev_class = {"yengil": "sev-yengil", "o'rta": "sev-orta", "og'ir": "sev-ogir"}.get(a.severity, "") %}
+                <tr>
+                    <td>#{{ a.id }}</td>
+                    <td>{{ a.substance }}</td>
+                    <td>{{ a.reaction or "—" }}</td>
+                    <td>{% if a.severity %}<span class="severity-badge {{ sev_class }}">{{ a.severity }}</span>{% else %}—{% endif %}</td>
+                    <td>{{ a.noted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="row-actions">
+                        <button class="btn-icon-sm danger" title="O'chirish" onclick="deleteAllergy({{ a.id }})">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="6">Bu bemorning allergiyasi qayd etilmagan</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="data-section">
+        <div class="header-container" style="margin-bottom: 16px;">
+            <div class="section-title" style="margin-bottom: 0;">Surunkali kasalliklar</div>
+            {% if current_user.role in ['admin', 'reception', 'doctor'] %}
+            <button class="btn-secondary-action" onclick="openChronicModal()">
+                <i class="fa-solid fa-plus"></i> Kasallik qo'shish
+            </button>
+            {% endif %}
+        </div>
+        <table class="content-table">
+            <thead><tr><th>ID</th><th>Nomi</th><th>Aniqlangan sana</th><th>Holat</th><th>Izoh</th><th>Amallar</th></tr></thead>
+            <tbody>
+                {% for c in chronic_conditions %}
+                <tr>
+                    <td>#{{ c.id }}</td>
+                    <td>{{ c.name }}</td>
+                    <td>{{ c.diagnosed_date.strftime('%Y-%m-%d') if c.diagnosed_date else "—" }}</td>
+                    <td><span class="status-badge">{{ c.status }}</span></td>
+                    <td>{{ c.notes or "—" }}</td>
+                    <td class="row-actions">
+                        <button class="btn-icon-sm danger" title="O'chirish" onclick="deleteChronicCondition({{ c.id }})">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="6">Bu bemorning surunkali kasalligi qayd etilmagan</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
-<div class="data-section">
-    <div class="section-title">Qabullar tarixi</div>
-    <table class="content-table">
-        <thead><tr><th>ID</th><th>Shifokor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th></tr></thead>
-        <tbody>
-            {% for appt in appointments %}
-            <tr>
-                <td>#{{ appt.id }}</td>
-                <td><a class="link-name" href="/doctors/{{ appt.doctor_id }}">{{ appt.doctor.fullname if appt.doctor else "Noma'lum" }}</a></td>
-                <td>{{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td>{{ "{:,}".format(appt.price) }}</td>
-                <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
-                <td><span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span></td>
-            </tr>
-            {% else %}
-            <tr class="empty-row"><td colspan="6">Bu bemorning hali qabuli bo'lmagan</td></tr>
+<!-- ═══════════════════════ 3) DAVOLANISHLAR ═════════════════════════
+     TreatmentHistory — sana bo'yicha KAMAYISH tartibida vaqt chizig'i
+     (backend allaqachon shu tartibda beradi: modules/patients.py
+     list_treatment_history — order_by date.desc()). Yozish faqat
+     doctor/admin (require_role backend'da), shuning uchun "Yozuv
+     qo'shish" tugmasi ham shu ikki rolga ko'rinadi. -->
+<div class="tab-pane" id="tab-davolanish">
+    <div class="data-section">
+        <div class="header-container" style="margin-bottom: 16px;">
+            <div class="section-title" style="margin-bottom: 0;">Davolanishlar tarixi</div>
+            {% if current_user.role in ['admin', 'doctor'] %}
+            <button class="btn-secondary-action" onclick="openTreatmentModal()">
+                <i class="fa-solid fa-plus"></i> Yozuv qo'shish
+            </button>
+            {% endif %}
+        </div>
+        {% if treatment_history %}
+        <div class="timeline">
+            {% for t in treatment_history %}
+            <div class="timeline-item">
+                <div class="timeline-date">{{ t.date.strftime('%Y-%m-%d') }}</div>
+                <div class="timeline-card">
+                    {% if t.diagnosis %}
+                    <h4>Tashxis</h4>
+                    <p>{{ t.diagnosis }}</p>
+                    {% endif %}
+                    {% if t.treatment %}
+                    <h4>Davolash rejasi</h4>
+                    <p>{{ t.treatment }}</p>
+                    {% endif %}
+                    {% if not t.diagnosis and not t.treatment %}
+                    <p style="color: var(--text-muted);">Tashxis/davolash rejasi kiritilmagan</p>
+                    {% endif %}
+                    <div class="timeline-meta">
+                        <span><i class="fa-solid fa-user-doctor"></i> {{ t.doctor.fullname if t.doctor else "Shifokor ko'rsatilmagan" }}</span>
+                        {% if t.appointment_id %}<span><i class="fa-solid fa-calendar-check"></i> Tashrif #{{ t.appointment_id }}</span>{% endif %}
+                    </div>
+                </div>
+            </div>
             {% endfor %}
-        </tbody>
-    </table>
+        </div>
+        {% else %}
+        <div class="empty-row" style="padding: 24px; text-align: center; color: var(--text-muted);">Bu bemorning davolanish tarixi hali qayd etilmagan</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════ 4) TASHRIFLAR ════════════════════════════
+     Mavjud appointments — barcha rollarga ko'rinadi. -->
+<div class="tab-pane" id="tab-tashrif">
+    <div class="data-section">
+        <div class="section-title">Qabullar tarixi</div>
+        <table class="content-table">
+            <thead><tr><th>ID</th><th>Shifokor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th></tr></thead>
+            <tbody>
+                {% for appt in appointments %}
+                <tr>
+                    <td>#{{ appt.id }}</td>
+                    <td><a class="link-name" href="/doctors/{{ appt.doctor_id }}">{{ appt.doctor.fullname if appt.doctor else "Noma'lum" }}</a></td>
+                    <td>{{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ "{:,}".format(appt.price) }}</td>
+                    <td class="{{ 'debt-positive' if appt.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(appt.debt) }}</td>
+                    <td><span class="status-badge status-{{ appt.status }}">{{ appt.status }}</span></td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="6">Bu bemorning hali qabuli bo'lmagan</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
-<div class="data-section">
-    <div class="section-title">To'lovlar tarixi</div>
-    <table class="content-table">
-        <thead><tr><th>ID</th><th>Qabul</th><th>Miqdor</th><th>Turi</th><th>Izoh</th><th>Sana</th></tr></thead>
-        <tbody>
-            {% for pay in payments %}
-            <tr>
-                <td>#{{ pay.id }}</td>
-                <td>#{{ pay.appointment_id }}</td>
-                <td>{{ "{:,}".format(pay.amount) }} UZS</td>
-                <td>
-                    {% if pay.is_refund %}<span class="status-badge status-cancelled">Qaytarim</span>
-                    {% elif pay.id in refunded_ids %}<span class="status-badge status-cancelled">To'lov (qaytarilgan)</span>
-                    {% else %}<span class="status-badge status-completed">To'lov</span>{% endif %}
-                </td>
-                <td>{{ pay.note or '—' }}</td>
-                <td>{{ pay.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            </tr>
-            {% else %}
-            <tr class="empty-row"><td colspan="6">Bu bemorning hali to'lovi bo'lmagan</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<div class="data-section">
-    <div class="section-title">Tahlil natijalari</div>
-    <table class="content-table">
-        <thead><tr><th>ID</th><th>Shifokor</th><th>Tahlil turi</th><th>Natija</th><th>Holat</th><th>Sana</th><th>Amallar</th></tr></thead>
-        <tbody>
-            {% for row in lab_rows %}
-            {% set r = row.obj %}
-            <tr>
-                <td>#{{ r.id }}</td>
-                <td>{{ r.doctor.fullname if r.doctor else '—' }}</td>
-                <td>{{ r.test_name }}</td>
-                <td>
-                    {% if row.parsed %}
-                        {% if row.abnormal_count and row.abnormal_count > 0 %}
-                        <span class="result-badge warn">{{ row.abnormal_count }} ta ogohlantirish</span>
+{% if current_user.role in ['admin', 'reception', 'doctor'] %}
+<!-- ═══════════════════════ 5) TAHLILLAR ═════════════════════════════
+     Mavjud lab_results — tibbiy tafsilot, cashier ko'rmaydi. -->
+<div class="tab-pane" id="tab-tahlil">
+    <div class="data-section">
+        <div class="section-title">Tahlil natijalari</div>
+        <table class="content-table">
+            <thead><tr><th>ID</th><th>Shifokor</th><th>Tahlil turi</th><th>Natija</th><th>Holat</th><th>Sana</th><th>Amallar</th></tr></thead>
+            <tbody>
+                {% for row in lab_rows %}
+                {% set r = row.obj %}
+                <tr>
+                    <td>#{{ r.id }}</td>
+                    <td>{{ r.doctor.fullname if r.doctor else '—' }}</td>
+                    <td>{{ r.test_name }}</td>
+                    <td>
+                        {% if row.parsed %}
+                            {% if row.abnormal_count and row.abnormal_count > 0 %}
+                            <span class="result-badge warn">{{ row.abnormal_count }} ta ogohlantirish</span>
+                            {% else %}
+                            <span class="result-badge ok">Me'yorda</span>
+                            {% endif %}
                         {% else %}
-                        <span class="result-badge ok">Me'yorda</span>
+                            <span class="result-badge legacy" title="{{ row.raw_text }}">Eski yozuv</span>
                         {% endif %}
-                    {% else %}
-                        <span class="result-badge legacy" title="{{ row.raw_text }}">Eski yozuv</span>
-                    {% endif %}
-                </td>
-                <td><span class="status-badge">{{ r.status }}</span></td>
-                <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td class="row-actions">
-                    {% if row.parsed %}
-                    <button class="btn-icon-sm" title="Batafsil" onclick='openLabViewModal({{ row.parsed|tojson }}, {{ r.test_name|tojson }}, {{ patient.fullname|tojson }})'>
-                        <i class="fa-solid fa-eye"></i>
-                    </button>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr class="empty-row"><td colspan="7">Bu bemorning hali tahlil natijasi yo'q</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </td>
+                    <td><span class="status-badge">{{ r.status }}</span></td>
+                    <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="row-actions">
+                        {% if row.parsed %}
+                        <button class="btn-icon-sm" title="Batafsil" onclick='openLabViewModal({{ row.parsed|tojson }}, {{ r.test_name|tojson }}, {{ patient.fullname|tojson }})'>
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="7">Bu bemorning hali tahlil natijasi yo'q</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════ 6) TO'LOVLAR ═════════════════════════════
+     Mavjud financials/payments — barcha rollarga ko'rinadi (kassir
+     uchun eng muhim bo'lim). -->
+<div class="tab-pane" id="tab-tolov">
+    <div class="data-section">
+        <div class="section-title">To'lovlar tarixi</div>
+        <table class="content-table">
+            <thead><tr><th>ID</th><th>Qabul</th><th>Miqdor</th><th>Turi</th><th>Izoh</th><th>Sana</th></tr></thead>
+            <tbody>
+                {% for pay in payments %}
+                <tr>
+                    <td>#{{ pay.id }}</td>
+                    <td>#{{ pay.appointment_id }}</td>
+                    <td>{{ "{:,}".format(pay.amount) }} UZS</td>
+                    <td>
+                        {% if pay.is_refund %}<span class="status-badge status-cancelled">Qaytarim</span>
+                        {% elif pay.id in refunded_ids %}<span class="status-badge status-cancelled">To'lov (qaytarilgan)</span>
+                        {% else %}<span class="status-badge status-completed">To'lov</span>{% endif %}
+                    </td>
+                    <td>{{ pay.note or '—' }}</td>
+                    <td>{{ pay.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="6">Bu bemorning hali to'lovi bo'lmagan</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- ═══════════════ MODAL: Tahlil natijasini ko'rish ═══════════════ -->
@@ -149,9 +425,159 @@
         </div>
     </div>
 </div>
+
+<!-- ═══════════════ MODAL: Allergiya qo'shish ═══════════════ -->
+<div id="allergyModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeModal('allergyModal')">&times;</span>
+        <h2><i class="fa-solid fa-triangle-exclamation"></i> Allergiya qo'shish</h2>
+        <div id="allergyFormError" class="form-error"></div>
+        <form id="allergyForm" onsubmit="submitAllergy(event)">
+            <div class="form-group">
+                <label for="al-substance">Modda:</label>
+                <input type="text" id="al-substance" required>
+            </div>
+            <div class="form-group">
+                <label for="al-reaction">Reaksiya:</label>
+                <input type="text" id="al-reaction">
+            </div>
+            <div class="form-group">
+                <label for="al-severity">Og'irlik darajasi:</label>
+                <select id="al-severity">
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="yengil">Yengil</option>
+                    <option value="o'rta">O'rta</option>
+                    <option value="og'ir">Og'ir</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-save" id="allergySaveBtn">Saqlash</button>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════════════ MODAL: Surunkali kasallik qo'shish ═══════════════ -->
+<div id="chronicModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeModal('chronicModal')">&times;</span>
+        <h2><i class="fa-solid fa-notes-medical"></i> Surunkali kasallik qo'shish</h2>
+        <div id="chronicFormError" class="form-error"></div>
+        <form id="chronicForm" onsubmit="submitChronicCondition(event)">
+            <div class="form-group">
+                <label for="cc-name">Nomi:</label>
+                <input type="text" id="cc-name" required>
+            </div>
+            <div class="form-group">
+                <label for="cc-diagnosed">Aniqlangan sana:</label>
+                <input type="date" id="cc-diagnosed">
+            </div>
+            <div class="form-group">
+                <label for="cc-status">Holat:</label>
+                <select id="cc-status">
+                    <option value="faol">Faol</option>
+                    <option value="remissiyada">Remissiyada</option>
+                    <option value="davolangan">Davolangan</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="cc-notes">Izoh:</label>
+                <textarea id="cc-notes" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn-save" id="chronicSaveBtn">Saqlash</button>
+        </form>
+    </div>
+</div>
+
+{% if current_user.role in ['admin', 'doctor'] %}
+<!-- ═══════════════ MODAL: Davolanish yozuvi qo'shish ═══════════════ -->
+<div id="treatmentModal" class="modal">
+    <div class="modal-content wide">
+        <span class="close-btn" onclick="closeModal('treatmentModal')">&times;</span>
+        <h2><i class="fa-solid fa-timeline"></i> Davolanish yozuvi qo'shish</h2>
+        <div id="treatmentFormError" class="form-error"></div>
+        <form id="treatmentForm" onsubmit="submitTreatmentHistory(event)">
+            <div class="form-row" style="display:flex; gap:16px;">
+                <div class="form-group">
+                    <label for="tr-date">Sana:</label>
+                    <input type="date" id="tr-date">
+                </div>
+                <div class="form-group">
+                    <label for="tr-doctor">Shifokor:</label>
+                    <select id="tr-doctor">
+                        <option value="">— Tanlanmagan —</option>
+                        {% for d in treatment_doctors %}
+                        <option value="{{ d.id }}" {% if current_user.role == 'doctor' and current_user.doctor_id == d.id %}selected{% endif %}>{{ d.fullname }} ({{ d.specialty }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="tr-appointment">Tashrif (ixtiyoriy):</label>
+                <select id="tr-appointment">
+                    <option value="">— Tanlanmagan —</option>
+                    {% for appt in appointments %}
+                    <option value="{{ appt.id }}">#{{ appt.id }} — {{ appt.scheduled_time.strftime('%Y-%m-%d %H:%M') }} ({{ appt.doctor.fullname if appt.doctor else "Noma'lum" }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="tr-diagnosis">Tashxis:</label>
+                <textarea id="tr-diagnosis" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="tr-treatment">Davolash rejasi:</label>
+                <textarea id="tr-treatment" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn-save" id="treatmentSaveBtn">Saqlash</button>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
+    // ── Bemor profili tab'lari ──
+    function showPatientTab(name) {
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
+        const btn = document.getElementById('tab-btn-' + name);
+        const pane = document.getElementById('tab-' + name);
+        if (btn) btn.classList.add('active');
+        if (pane) pane.classList.add('active');
+    }
+
+    // ── Bemor rasmini yuklash ──
+    async function uploadPatientPhoto(event) {
+        const input = event.target;
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+        if (!allowedTypes.includes(file.type)) {
+            showToast("Faqat JPG yoki PNG formatidagi rasm qabul qilinadi", "error");
+            input.value = '';
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            showToast("Rasm hajmi 2MB dan oshmasligi kerak", "error");
+            input.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            await fetchJSON('/api/patients/{{ patient.id }}/photo', {
+                method: 'POST',
+                body: formData
+            });
+            location.reload();
+        } catch (err) {
+            showToast("Rasm yuklashda xatolik: " + err.message, "error");
+        } finally {
+            input.value = '';
+        }
+    }
+
     const FLAG_LABELS = {
         normal: "Me'yorda", past: "Past", yuqori: "Yuqori",
         ogohlantirish: "Diqqat", neutral: ""
@@ -182,5 +608,123 @@
             noteWrap.style.display = 'none';
         }
         openModal('labViewModal');
+    }
+
+    // ── Allergiyalar ──
+    function openAllergyModal() {
+        setFormError('allergyFormError', null);
+        document.getElementById('allergyForm').reset();
+        openModal('allergyModal');
+    }
+
+    async function submitAllergy(event) {
+        event.preventDefault();
+        const btn = document.getElementById('allergySaveBtn');
+        setFormError('allergyFormError', null);
+        btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+        try {
+            await fetchJSON('/api/patients/{{ patient.id }}/allergies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    substance: document.getElementById('al-substance').value.trim(),
+                    reaction: document.getElementById('al-reaction').value.trim() || null,
+                    severity: document.getElementById('al-severity').value || null
+                })
+            });
+            closeModal('allergyModal');
+            location.reload();
+        } catch (err) {
+            setFormError('allergyFormError', err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = 'Saqlash';
+        }
+    }
+
+    async function deleteAllergy(id) {
+        if (!confirm("Rostdan ham bu allergiya yozuvini o'chirmoqchimisiz?")) return;
+        try {
+            await fetchJSON(`/api/patients/{{ patient.id }}/allergies/${id}`, { method: 'DELETE' });
+            location.reload();
+        } catch (err) {
+            showToast("O'chirishda xatolik: " + err.message, "error");
+        }
+    }
+
+    // ── Surunkali kasalliklar ──
+    function openChronicModal() {
+        setFormError('chronicFormError', null);
+        document.getElementById('chronicForm').reset();
+        openModal('chronicModal');
+    }
+
+    async function submitChronicCondition(event) {
+        event.preventDefault();
+        const btn = document.getElementById('chronicSaveBtn');
+        setFormError('chronicFormError', null);
+        btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+        try {
+            await fetchJSON('/api/patients/{{ patient.id }}/chronic-conditions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: document.getElementById('cc-name').value.trim(),
+                    diagnosed_date: document.getElementById('cc-diagnosed').value || null,
+                    status: document.getElementById('cc-status').value,
+                    notes: document.getElementById('cc-notes').value.trim() || null
+                })
+            });
+            closeModal('chronicModal');
+            location.reload();
+        } catch (err) {
+            setFormError('chronicFormError', err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = 'Saqlash';
+        }
+    }
+
+    async function deleteChronicCondition(id) {
+        if (!confirm("Rostdan ham bu surunkali kasallik yozuvini o'chirmoqchimisiz?")) return;
+        try {
+            await fetchJSON(`/api/patients/{{ patient.id }}/chronic-conditions/${id}`, { method: 'DELETE' });
+            location.reload();
+        } catch (err) {
+            showToast("O'chirishda xatolik: " + err.message, "error");
+        }
+    }
+
+    // ── Davolanishlar tarixi ──
+    function openTreatmentModal() {
+        setFormError('treatmentFormError', null);
+        document.getElementById('treatmentForm').reset();
+        openModal('treatmentModal');
+    }
+
+    async function submitTreatmentHistory(event) {
+        event.preventDefault();
+        const btn = document.getElementById('treatmentSaveBtn');
+        setFormError('treatmentFormError', null);
+        btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+        try {
+            const doctorVal = document.getElementById('tr-doctor').value;
+            const apptVal = document.getElementById('tr-appointment').value;
+            await fetchJSON('/api/patients/{{ patient.id }}/treatment-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: document.getElementById('tr-date').value || null,
+                    doctor_id: doctorVal ? parseInt(doctorVal, 10) : null,
+                    appointment_id: apptVal ? parseInt(apptVal, 10) : null,
+                    diagnosis: document.getElementById('tr-diagnosis').value.trim() || null,
+                    treatment: document.getElementById('tr-treatment').value.trim() || null
+                })
+            });
+            closeModal('treatmentModal');
+            location.reload();
+        } catch (err) {
+            setFormError('treatmentFormError', err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = 'Saqlash';
+        }
     }
 {% endblock %}

@@ -3,6 +3,18 @@
 
 {% block title %}Doktorlar{% endblock %}
 
+{% block extra_style %}
+.doctor-row-name { display: flex; align-items: center; gap: 12px; }
+.doctor-avatar-sm {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #05070d;
+    background-color: var(--primary);
+    background-image: linear-gradient(135deg, var(--primary), var(--accent-violet));
+}
+{% endblock %}
+
 {% block content %}
 <div class="header-container">
     <div class="header-title"><h1>Doktorlar</h1></div>
@@ -31,7 +43,16 @@
             {% for d in doctors %}
             <tr>
                 <td>#{{ d.id }}</td>
-                <td><a class="link-name" href="/doctors/{{ d.id }}">{{ d.fullname }}</a></td>
+                <td>
+                    <div class="doctor-row-name">
+                        {% if d.photo_path %}
+                        <div class="doctor-avatar-sm" style="background-image: url('{{ d.photo_path }}');"></div>
+                        {% else %}
+                        <div class="doctor-avatar-sm">{{ d.fullname[0]|upper }}</div>
+                        {% endif %}
+                        <a class="link-name" href="/doctors/{{ d.id }}">{{ d.fullname }}</a>
+                    </div>
+                </td>
                 <td><span class="badge-doctor">{{ d.specialty }}</span></td>
                 <td>{{ d.room or '—' }}</td>
                 <td>{{ "{:,}".format(d.consultation_price) }}</td>
@@ -40,7 +61,7 @@
                 {% if current_user.role == 'admin' %}
                 <td class="row-actions">
                     <button class="btn-icon-sm" title="Tahrirlash"
-                        onclick='openDoctorEditModal({{ {"id": d.id, "fullname": d.fullname, "specialty": d.specialty, "room": d.room, "consultation_price": d.consultation_price, "working_hours": d.working_hours, "is_active": d.is_active}|tojson }})'>
+                        onclick='openDoctorEditModal({{ {"id": d.id, "fullname": d.fullname, "specialty": d.specialty, "room": d.room, "consultation_price": d.consultation_price, "working_hours": d.working_hours, "is_active": d.is_active, "license_number": d.license_number, "experience_years": d.experience_years, "qualification_category": d.qualification_category}|tojson }})'>
                         <i class="fa-solid fa-pen"></i>
                     </button>
                     <button class="btn-icon-sm danger" title="O'chirish" onclick="deleteDoctor({{ d.id }})">

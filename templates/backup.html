@@ -150,7 +150,7 @@
             btn.textContent = 'Saqlandi ✓';
             setTimeout(() => { btn.textContent = 'Sozlamalarni saqlash'; }, 1500);
         } catch (err) {
-            alert("Saqlashda xatolik: " + err.message);
+            showToast("Saqlashda xatolik: " + err.message, "error");
             btn.textContent = 'Sozlamalarni saqlash';
         } finally {
             btn.disabled = false;

@@ -31,17 +31,31 @@ from sqlalchemy.orm import Session
 
 import models
 import schemas
+
 from models import SELF_PASSWORD_CHANGE_LIMIT
 from auth import get_current_user_optional, get_cache_stats, clear_user_cache
+from audit import log_action  
 from rate_limiter import limiter
 from database import engine as db_engine
 from database import get_db
+from eskiz_client import sms_enabled
 from modules.appointments import list_appointments
 from modules.dashboard import get_dashboard_summary, get_live_queue
 from modules.doctors import list_doctors
 from modules.patients import compute_financials, list_patients
 from modules.payments import list_payments
 from modules.lab_results import _parse_result_data
+from modules.reports import (
+    get_cancel_reasons,
+    get_doctor_performance,
+    get_hourly_load,
+    get_patient_retention,
+    get_period_trend,
+    get_report_overview,
+    get_status_breakdown,
+    get_weekday_load,
+    parse_date_range,
+)
 from reminder_service import start_reminder_service, stop_reminder_service
 import backup_manager
 
@@ -279,6 +293,17 @@ def _open_appointments_for_select(appointments) -> list:
         )
     return result
 
+def _calc_age(birth_date: Optional[date]) -> Optional[int]:
+    """birth_date asosida to'liq yil hisobidagi yoshni qaytaradi (hali tug'ilgan
+    kuni yetib kelmagan bo'lsa 1 yil ayiradi). birth_date bo'lmasa None."""
+    if birth_date is None:
+        return None
+    today = date.today()
+    age = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    return age
+
 def _ctx(request: Request, user: models.User, active_page: str, extra: Optional[dict] = None) -> dict:
     base = {
         "request": request,
@@ -345,13 +370,28 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
 def patients_page(
     request: Request, 
     db: Session = Depends(get_db),
+    allergy: Optional[str] = None,
+    chronic_condition: Optional[str] = None,
 ) -> HTMLResponse:
     start_time = time.time()
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    
-    patients = list_patients(db)
+
+    # 🔐 Allergiya/surunkali kasallik bo'yicha filtr tibbiy ma'lumot —
+    # cashier uchun sahifada input umuman ko'rinmaydi (patients.html), lekin
+    # kimdir URL'ga qo'lda ?allergy=... qo'shsa ham, backend (list_patients)
+    # buni cashier uchun jim ravishda e'tiborsiz qoldiradi — 403 bilan butun
+    # sahifani buzish o'rniga, oddiy (filtrsiz) ro'yxat qaytadi.
+    can_filter_medical = user.role in ("admin", "reception", "doctor")
+    patients = list_patients(
+        db,
+        user,
+        allergy if can_filter_medical else None,
+        chronic_condition if can_filter_medical else None,
+    )
+    for p in patients:
+        p.age = _calc_age(p.birth_date)
     
     elapsed = (time.time() - start_time) * 1000
     logger.info(f"👥 Patients loaded in {elapsed:.2f}ms for user: {user.username}")
@@ -361,7 +401,13 @@ def patients_page(
         name="patients.html", 
         context=_ctx(
             request, user, "patients", 
-            {"patients": patients, "load_time": f"{elapsed:.2f}ms"}
+            {
+                "patients": patients,
+                "load_time": f"{elapsed:.2f}ms",
+                "can_filter_medical": can_filter_medical,
+                "filter_allergy": allergy or "",
+                "filter_chronic_condition": chronic_condition or "",
+            }
         )
     )
 
@@ -399,6 +445,50 @@ def patient_detail_page(
         .all()
     }
 
+    # ⚠️ Allergiyalar va surunkali kasalliklar — bemor sahifasidagi
+    # xavfsizlik banneri (barcha rollarga ko'rinadi) va tahrirlash
+    # bo'limi (faqat admin/reception/doctor) shu ro'yxatlarga tayanadi.
+    allergies = (
+        db.query(models.Allergy)
+        .filter(models.Allergy.patient_id == patient_id)
+        .order_by(models.Allergy.id.desc())
+        .all()
+    )
+    chronic_conditions = (
+        db.query(models.ChronicCondition)
+        .filter(models.ChronicCondition.patient_id == patient_id)
+        .order_by(models.ChronicCondition.id.desc())
+        .all()
+    )
+
+    # 💊 Davolanishlar tarixi + shifokorlar ro'yxati (yozuv qo'shish
+    # formasidagi tanlov uchun) — FAQAT admin/reception/doctor uchun
+    # so'raladi. Allergiya/kasallik kabi "har doim so'rab, shablonda
+    # yashirish" o'rniga bu yerda backend darajasida ham so'rov
+    # yubormaslikni tanladik: TreatmentHistory.diagnosis/treatment eng
+    # nozik (shifrlangan) tibbiy maydonlar, shuning uchun cashier uchun
+    # ularni DB'dan hech deshifrlamaslik — ikki qavatli himoya
+    # (medical-security-auditor: least privilege / defence in depth).
+    can_view_treatment = user.role in ("admin", "reception", "doctor")
+    treatment_history = []
+    treatment_doctors = []
+    if can_view_treatment:
+        treatment_history = (
+            db.query(models.TreatmentHistory)
+            .filter(models.TreatmentHistory.patient_id == patient_id)
+            .order_by(
+                models.TreatmentHistory.date.desc(),
+                models.TreatmentHistory.id.desc(),
+            )
+            .all()
+        )
+        treatment_doctors = (
+            db.query(models.Doctor)
+            .filter(models.Doctor.is_active == True)  # noqa: E712
+            .order_by(models.Doctor.fullname)
+            .all()
+        )
+
     # 🔬 Tahlil natijalari: shu bemorga tegishli barcha LabResult yozuvlari
     # — /lab-results/ sahifasidagi bilan bir xil ko'rinishda (parsed
     # ko'rsatkichlar yoki eski erkin-matn), shunda ma'lumot ikkala joyda
@@ -428,11 +518,17 @@ def patient_detail_page(
             "patients",
             {
                 "patient": patient,
+                "patient_age": _calc_age(patient.birth_date),
                 "financials": financials,
                 "appointments": appointments,
                 "payments": payments,
                 "refunded_ids": refunded_ids,
                 "lab_rows": lab_rows,
+                "allergies": allergies,
+                "chronic_conditions": chronic_conditions,
+                "treatment_history": treatment_history,
+                "treatment_doctors": treatment_doctors,
+                "can_view_treatment": can_view_treatment,
             },
         ),
     )
@@ -564,12 +660,42 @@ def reports_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    
+    if user.role != "admin":
+        return RedirectResponse(url="/dashboard")
+
+    date_from = request.query_params.get("date_from")
+    date_to = request.query_params.get("date_to")
+    start, end = parse_date_range(date_from, date_to)
+
     summary = get_dashboard_summary(db)
+    overview = get_report_overview(db, start, end)
+    status_breakdown = get_status_breakdown(db, start, end)
+    doctor_performance = get_doctor_performance(db, start, end)
+    cancel_reasons = get_cancel_reasons(db, start, end)
+    hourly_load = get_hourly_load(db, start, end)
+    weekday_load = get_weekday_load(db, start, end)
+    retention = get_patient_retention(db, start, end)
+    period_trend = get_period_trend(db)
+
     return templates.TemplateResponse(
         request=request, 
         name="reports.html", 
-        context=_ctx(request, user, "reports", {"summary": summary})
+        context=_ctx(
+            request, user, "reports",
+            {
+                "summary": summary,
+                "overview": overview,
+                "status_breakdown": status_breakdown,
+                "doctor_performance": doctor_performance,
+                "cancel_reasons": cancel_reasons,
+                "hourly_load": [row.model_dump() for row in hourly_load],
+                "weekday_load": [row.model_dump() for row in weekday_load],
+                "retention": retention,
+                "period_trend": [row.model_dump() for row in period_trend],
+                "date_from_str": start.strftime("%Y-%m-%d"),
+                "date_to_str": end.strftime("%Y-%m-%d"),
+            },
+        )
     )
 
 # ==============================================
@@ -614,10 +740,10 @@ def _quick_links_for_role(role: str) -> list[dict]:
         "admin": {"dashboard", "patients", "appointments", "doctors", "lab_results",
                   "payments", "reports", "users", "audit_log", "backup"},
         "reception": {"dashboard", "patients", "appointments", "doctors", "lab_results",
-                      "payments", "reports"},
+                      "payments"},
         "cashier": {"dashboard", "patients", "appointments", "doctors", "lab_results",
-                    "payments", "reports"},
-        "doctor": {"dashboard", "patients", "appointments", "doctors", "lab_results", "reports"},
+                    "payments"},
+        "doctor": {"dashboard", "patients", "appointments", "doctors", "lab_results"},
     }
     allowed = visible_by_role.get(role, {"dashboard"})
     return [link for link in all_links if link["key"] in allowed]
@@ -632,6 +758,16 @@ def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     changes_used = user.self_password_change_count
     changes_remaining = max(SELF_PASSWORD_CHANGE_LIMIT - changes_used, 0)
 
+    # FAZA 3 (SKELETON): faqat admin uchun statik "Tez orada" kartasi.
+    # Bu yerda hech qanday tashqi so'rov yo'q — faqat bazadagi bitta
+    # sozlamalar qatorini o'qib, hozircha doim False bo'lgan holatni
+    # aniqlaymiz.
+    gov_integration_enabled = False
+    if user.role == "admin":
+        gov_settings = db.query(models.GovIntegrationSettings).first()
+        if gov_settings is not None:
+            gov_integration_enabled = gov_settings.is_enabled
+
     return templates.TemplateResponse(
         request=request,
         name="profile.html",
@@ -643,6 +779,7 @@ def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
                 "changes_used": changes_used,
                 "changes_remaining": changes_remaining,
                 "limit_reached": changes_remaining == 0,
+                "gov_integration_enabled": gov_integration_enabled,
             },
         ),
     )
@@ -679,6 +816,9 @@ def health_check() -> dict:
         "timestamp": datetime.now().isoformat(),
         "modules_loaded": len(clinicflow_engine.loaded_modules),
         "user_cache": get_cache_stats(),
+        # 📩 FAZA 1: Eskiz.uz SMS servisi sozlanganmi (credential bor-yo'qligi,
+        # tarmoq holati emas) — eskiz_client.py
+        "sms_enabled": sms_enabled(),
     }
 
 # ==============================================

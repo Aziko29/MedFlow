@@ -3,9 +3,228 @@
 
 {% block title %}Hisobot{% endblock %}
 
+{% block extra_style %}
+.report-filter-form { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.report-filter-form .form-group { margin-bottom: 0; min-width: 160px; }
+.report-filter-form label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+.report-card .sub-value { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* 📊 2-bosqich: status taqsimoti jadvali + progress-bar */
+.status-breakdown-table { width: 100%; border-collapse: collapse; }
+.status-breakdown-table td { padding: 12px 8px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.status-breakdown-table td:first-child { width: 160px; font-weight: 500; }
+.status-breakdown-table td:nth-child(2) { width: 70px; text-align: right; color: var(--text-muted); font-size: 13px; }
+.status-breakdown-table td:nth-child(3) { width: 60px; text-align: right; font-weight: 700; }
+.status-bar-track { flex: 1; height: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; overflow: hidden; }
+.status-bar-fill { height: 100%; border-radius: 6px; transition: width 0.3s ease; }
+.status-bar-fill.bar-completed { background: var(--accent-green); }
+.status-bar-fill.bar-cancelled, .status-bar-fill.bar-no_show { background: var(--danger); }
+.status-bar-fill.bar-delayed { background: var(--status-delayed); }
+.status-bar-fill.bar-waiting, .status-bar-fill.bar-in_progress { background: var(--primary); }
+
+/* 🩺 3-bosqich: shifokor samaradorligi jadvali */
+.doctor-performance-table { width: 100%; border-collapse: collapse; }
+.doctor-performance-table th, .doctor-performance-table td { padding: 12px 8px; border-bottom: 1px solid var(--border-color); text-align: left; }
+.doctor-performance-table th { color: var(--text-muted); font-size: 13px; font-weight: 500; }
+.doctor-performance-table td.numeric, .doctor-performance-table th.numeric { text-align: right; }
+.doctor-performance-table tr.top-doctor-row { background: rgba(255, 215, 0, 0.06); }
+.doctor-performance-table tr.top-doctor-row td:first-child { font-weight: 700; }
+
+/* 🚫 4-bosqich: bekor qilish sabablari ro'yxati */
+.cancel-reason-list { list-style: none; margin: 0; padding: 0; }
+.cancel-reason-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px; border-bottom: 1px solid var(--border-color); }
+.cancel-reason-item:last-child { border-bottom: none; }
+.cancel-reason-item .reason-label { font-weight: 500; }
+.cancel-reason-item .reason-stats { color: var(--text-muted); font-size: 13px; }
+.cancel-reason-item.top-cancel-reason { color: var(--danger); }
+.cancel-reason-item.top-cancel-reason .reason-label { font-weight: 700; }
+.cancel-reason-item.top-cancel-reason .reason-stats { color: var(--danger); font-weight: 600; }
+
+/* 📈 5-bosqich: band soatlar va kunlar (Chart.js) */
+.load-charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; }
+.load-chart-wrap { background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; }
+.load-chart-wrap h4 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-muted); font-weight: 500; }
+.load-chart-wrap canvas { max-height: 280px; }
+
+/* 📉 7-bosqich: oxirgi oylar dinamikasi */
+.trend-summary { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--text-muted); }
+.trend-summary b { color: var(--text-dark); }
+{% endblock %}
+
 {% block content %}
 <div class="header-container">
     <div class="header-title"><h1>Hisobot</h1></div>
+    <div class="header-actions">
+        <a href="/api/reports/export/csv?date_from={{ date_from_str }}&date_to={{ date_to_str }}"
+           class="btn-secondary-action">
+            <i class="fa-solid fa-file-csv"></i> CSV yuklab olish
+        </a>
+    </div>
+</div>
+
+<div class="data-section">
+    <form method="get" action="/reports" class="report-filter-form">
+        <div class="form-group">
+            <label for="date_from">Sanadan:</label>
+            <input type="date" id="date_from" name="date_from" value="{{ date_from_str }}">
+        </div>
+        <div class="form-group">
+            <label for="date_to">Sanagacha:</label>
+            <input type="date" id="date_to" name="date_to" value="{{ date_to_str }}">
+        </div>
+        <button type="submit" class="btn-primary-action"><i class="fa-solid fa-filter"></i> Qo'llash</button>
+    </form>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Umumiy hajm ko'rsatkichlari ({{ date_from_str }} — {{ date_to_str }})</div>
+    <div class="report-grid">
+        <div class="report-card blue kpi-card">
+            <div><h4>Jami bemorlar</h4><p>{{ overview.total_patients }}</p></div>
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="report-card green kpi-card">
+            <div>
+                <h4>Faol shifokorlar</h4><p>{{ overview.total_doctors_active }}</p>
+                <div class="sub-value">Nofaol: {{ overview.total_doctors_inactive }}</div>
+            </div>
+            <i class="fas fa-user-md"></i>
+        </div>
+        <div class="report-card purple kpi-card">
+            <div><h4>Tanlangan davrdagi qabullar</h4><p>{{ overview.period_appointments }}</p></div>
+            <i class="fas fa-calendar-check"></i>
+        </div>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Status bo'yicha taqsimot ({{ date_from_str }} — {{ date_to_str }})</div>
+    {% if status_breakdown.total == 0 %}
+    <p style="color: var(--text-muted);">Bu davrda qabullar yo'q.</p>
+    {% else %}
+    <table class="status-breakdown-table">
+        <tbody>
+            {% for item in status_breakdown.items %}
+            <tr>
+                <td>{{ item.label }}</td>
+                <td>{{ item.count }}</td>
+                <td>{{ item.percentage }}%</td>
+                <td style="width: auto;">
+                    <div class="status-bar-track">
+                        <div class="status-bar-fill bar-{{ item.status }}" style="width: {{ item.percentage }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<div class="data-section">
+    <div class="section-title">Shifokor bo'yicha samaradorlik ({{ date_from_str }} — {{ date_to_str }})</div>
+    {% set active_doctor_period_total = doctor_performance | sum(attribute="total") %}
+    {% if doctor_performance|length == 0 or active_doctor_period_total == 0 %}
+    <p style="color: var(--text-muted);">Bu davrda ma'lumot yo'q</p>
+    {% else %}
+    <table class="doctor-performance-table">
+        <thead>
+            <tr>
+                <th>Shifokor</th>
+                <th>Mutaxassislik</th>
+                <th class="numeric">Jami</th>
+                <th class="numeric">Tugagan</th>
+                <th class="numeric">Bekor qilingan</th>
+                <th class="numeric">Kechikkan</th>
+                <th class="numeric">Kelmagan</th>
+                <th class="numeric">Tushum</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in doctor_performance %}
+            <tr{% if loop.first and row.total > 0 %} class="top-doctor-row"{% endif %}>
+                <td>{{ row.doctor_name }}{% if loop.first and row.total > 0 %} 🏆{% endif %}</td>
+                <td>{{ row.specialty }}</td>
+                <td class="numeric">{{ row.total }}</td>
+                <td class="numeric">{{ row.completed }}</td>
+                <td class="numeric">{{ row.cancelled }}</td>
+                <td class="numeric">{{ row.delayed }}</td>
+                <td class="numeric">{{ row.no_show }}</td>
+                <td class="numeric">{{ "{:,}".format(row.revenue) }} UZS</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<!-- ⬇️ Eski bloklar — keyingi bosqichlarda (status taqsimoti, shifokor
+     samaradorligi va h.k.) yangi bo'limlar bilan almashtiriladi. -->
+{% if cancel_reasons|length > 0 %}
+<div class="data-section">
+    <div class="section-title">Bekor qilish sabablari ({{ date_from_str }} — {{ date_to_str }})</div>
+    <ul class="cancel-reason-list">
+        {% for item in cancel_reasons %}
+        <li class="cancel-reason-item{% if loop.first %} top-cancel-reason{% endif %}">
+            <span class="reason-label">{{ item.reason }}</span>
+            <span class="reason-stats">{{ item.count }} ta &middot; {{ item.percentage }}%</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="data-section">
+    <div class="section-title">Band soatlar va kunlar ({{ date_from_str }} — {{ date_to_str }})</div>
+    <div class="load-charts-grid">
+        <div class="load-chart-wrap">
+            <h4>Soat bo'yicha band qabullar</h4>
+            <canvas id="hourlyLoadChart"></canvas>
+        </div>
+        <div class="load-chart-wrap">
+            <h4>Hafta kuni bo'yicha band qabullar</h4>
+            <canvas id="weekdayLoadChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">Yangi vs qaytgan bemorlar ({{ date_from_str }} — {{ date_to_str }})</div>
+    {% if retention.new_patients + retention.returning_patients == 0 %}
+    <p style="color: var(--text-muted);">Bu davrda ma'lumot yo'q</p>
+    {% else %}
+    <div class="report-grid">
+        <div class="report-card blue kpi-card">
+            <div>
+                <h4>Yangi bemorlar</h4><p>{{ retention.new_patients }}</p>
+                <div class="sub-value">{{ retention.new_percentage }}%</div>
+            </div>
+            <i class="fas fa-user-plus"></i>
+        </div>
+        <div class="report-card green kpi-card">
+            <div>
+                <h4>Qaytgan bemorlar</h4><p>{{ retention.returning_patients }}</p>
+                <div class="sub-value">{{ retention.returning_percentage }}%</div>
+            </div>
+            <i class="fas fa-user-check"></i>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="data-section">
+    <div class="section-title">Oxirgi 6 oy dinamikasi</div>
+    <div class="load-chart-wrap">
+        <canvas id="periodTrendChart"></canvas>
+    </div>
+    {% if period_trend|length > 0 %}
+    {% set busiest_month = period_trend | max(attribute="appointments") %}
+    {% set quietest_month = period_trend | min(attribute="appointments") %}
+    <div class="trend-summary">
+        <span>Eng yuqori oy: <b>{{ busiest_month.period_label }}</b> ({{ busiest_month.appointments }} ta qabul)</span>
+        <span>Eng past oy: <b>{{ quietest_month.period_label }}</b> ({{ quietest_month.appointments }} ta qabul)</span>
+    </div>
+    {% endif %}
 </div>
 
 <div class="data-section">
@@ -47,4 +266,104 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+    // 📈 5-bosqich: band soatlar va kunlar — Chart.js orqali ikkita bar chart.
+    const HOURLY_LOAD = {{ hourly_load|tojson }};
+    const WEEKDAY_LOAD = {{ weekday_load|tojson }};
+
+    (function renderLoadCharts() {
+        const rootStyles = getComputedStyle(document.documentElement);
+        const primaryColor = rootStyles.getPropertyValue('--primary').trim() || '#00e5ff';
+        const violetColor = rootStyles.getPropertyValue('--accent-violet').trim() || '#a855f7';
+
+        const hourlyCanvas = document.getElementById('hourlyLoadChart');
+        if (hourlyCanvas) {
+            new Chart(hourlyCanvas, {
+                type: 'bar',
+                data: {
+                    labels: HOURLY_LOAD.map(row => String(row.hour).padStart(2, '0') + ':00'),
+                    datasets: [{
+                        label: 'Qabullar soni',
+                        data: HOURLY_LOAD.map(row => row.count),
+                        backgroundColor: primaryColor,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        const weekdayCanvas = document.getElementById('weekdayLoadChart');
+        if (weekdayCanvas) {
+            new Chart(weekdayCanvas, {
+                type: 'bar',
+                data: {
+                    labels: WEEKDAY_LOAD.map(row => row.weekday_label),
+                    datasets: [{
+                        label: 'Qabullar soni',
+                        data: WEEKDAY_LOAD.map(row => row.count),
+                        backgroundColor: violetColor,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+    })();
+
+    // 📉 7-bosqich: oxirgi oylar dinamikasi — jami vs tugallangan qabullar.
+    const PERIOD_TREND = {{ period_trend|tojson }};
+
+    (function renderPeriodTrendChart() {
+        const rootStyles = getComputedStyle(document.documentElement);
+        const primaryColor = rootStyles.getPropertyValue('--primary').trim() || '#00e5ff';
+        const greenColor = rootStyles.getPropertyValue('--accent-green').trim() || '#39ff9d';
+
+        const trendCanvas = document.getElementById('periodTrendChart');
+        if (trendCanvas) {
+            new Chart(trendCanvas, {
+                type: 'line',
+                data: {
+                    labels: PERIOD_TREND.map(row => row.period_label),
+                    datasets: [
+                        {
+                            label: 'Jami qabullar',
+                            data: PERIOD_TREND.map(row => row.appointments),
+                            borderColor: primaryColor,
+                            backgroundColor: primaryColor,
+                            tension: 0.3,
+                        },
+                        {
+                            label: 'Tugallangan',
+                            data: PERIOD_TREND.map(row => row.completed),
+                            borderColor: greenColor,
+                            backgroundColor: greenColor,
+                            tension: 0.3,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+    })();
 {% endblock %}

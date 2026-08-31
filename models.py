@@ -46,6 +46,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     event,
 )
 from sqlalchemy.orm import relationship
@@ -73,6 +74,12 @@ APPOINTMENT_TRANSITIONS = {
 }
 
 USER_ROLES = ("admin", "reception", "doctor", "cashier")
+
+# Bemor moduli — allergiya og'irlik darajasi va surunkali kasallik holati
+# uchun ruxsat etilgan qiymatlar (schemas.py shu yerdan import qiladi,
+# APPOINTMENT_STATUSES bilan bir xil naqsh).
+ALLERGY_SEVERITIES = ("yengil", "o'rta", "og'ir")
+CHRONIC_CONDITION_STATUSES = ("faol", "remissiyada", "davolangan")
 
 # ── Xodimning o'z profilida parolni almashtirish limiti ──────────────
 # Xodim o'z profilidan ("Sozlamalar" sahifasi) ketma-ket ko'pi bilan shu
@@ -126,6 +133,24 @@ class Doctor(Base):
     working_hours = Column(String, nullable=True, default="09:00 - 18:00")
     is_active = Column(Boolean, default=True)
 
+    # 🖼️ Shifokor rasmi: bemor rasmi bilan bir xil pattern (patient.photo_path
+    # ga qara) — shifrlanmaydi, static/uploads/doctors/{id}.jpg ga ishora
+    # qiluvchi URL yo'l. Rasm bo'lmasa NULL, shablon placeholder ko'rsatadi.
+    photo_path = Column(String, nullable=True)
+
+    # 🪪 Litsenziya raqami — maxfiy emas, tibbiy amaliyot litsenziyasi
+    # raqami, tekshiruv/hisobot maqsadida ko'rsatiladi.
+    license_number = Column(String, nullable=True)
+
+    # 📈 Ish tajribasi (to'liq yil hisobida).
+    experience_years = Column(Integer, nullable=True)
+
+    # 🏅 Malaka toifasi — masalan "Oliy toifa" / "Birinchi toifa" /
+    # "Ikkinchi toifa". Erkin matn (bemordagi blood_type kabi cheklangan
+    # qiymatlar to'plami emas, chunki toifalar davlat tomonidan vaqti-vaqti
+    # bilan yangilanishi mumkin — frontendda select orqali cheklanadi).
+    qualification_category = Column(String, nullable=True)
+
     appointments = relationship(
         "Appointment", back_populates="doctor", cascade="all, delete-orphan"
     )
@@ -151,6 +176,27 @@ class Patient(Base):
     birth_date = Column(Date, nullable=True)
     address = Column(EncryptedString(255, aad_context="patient.address"), nullable=True)
     medical_notes = Column(EncryptedText(aad_context="patient.medical_notes"), nullable=True)
+
+    # 🖼️ Bemor rasmi: shifrlanmagan — bu maxfiy ma'lumot emas, shunchaki
+    # static/uploads/patients/{id}.jpg fayliga ishora qiluvchi URL yo'l
+    # (masalan "/static/uploads/patients/5.jpg"). Rasm mavjud bo'lmasa —
+    # NULL, shablon (template) o'rniga placeholder avatar ko'rsatadi.
+    photo_path = Column(String, nullable=True)
+
+    # 🩸 Qon guruhi (masalan "A+", "O-", "AB+"). Shifrlanmagan — favqulodda
+    # holatda barcha rollarga (admin/reception/doctor/cashier) tezkor
+    # ko'rinishi kerak, shifrlash bu maqsadga qarshi ishlar edi.
+    blood_type = Column(String(3), nullable=True)
+
+    # 🚨 Favqulodda holat kontakti — shaxsiy ma'lumot (PII), shuning uchun
+    # phone/address bilan bir xil pattern: EncryptedString (crypto_fields.py).
+    emergency_contact_name = Column(
+        EncryptedString(64, aad_context="patient.emergency_name"), nullable=True
+    )
+    emergency_contact_phone = Column(
+        EncryptedString(32, aad_context="patient.emergency_phone"), nullable=True
+    )
+
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # 📲 Telegram reminder integratsiyasi: bemor botga /start bosib, kontaktini
@@ -178,6 +224,18 @@ class Patient(Base):
     )
     lab_results = relationship(
         "LabResult", back_populates="patient", cascade="all, delete-orphan"
+    )
+    allergies = relationship(
+        "Allergy", back_populates="patient", cascade="all, delete-orphan"
+    )
+    chronic_conditions = relationship(
+        "ChronicCondition", back_populates="patient", cascade="all, delete-orphan"
+    )
+    treatment_history = relationship(
+        "TreatmentHistory",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="TreatmentHistory.date.desc()",
     )
 
 
@@ -289,6 +347,111 @@ class LabResult(Base):
     doctor = relationship("Doctor", back_populates="lab_results")
 
 
+class Allergy(Base):
+    """⚠️ Bemor allergiyalari — modules/patients.py'dagi
+    /patients/{id}/allergies CRUD shu modelga tayanadi. Bemor o'chirilsa,
+    uning allergiya yozuvlari ham o'chadi (Patient.allergies,
+    cascade="all, delete-orphan")."""
+
+    __tablename__ = "allergies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    substance = Column(String, nullable=False)  # masalan: "Penitsillin"
+    reaction = Column(String, nullable=True)  # masalan: "toshma, qichishish"
+    severity = Column(String, nullable=True)  # ALLERGY_SEVERITIES dan biri
+    noted_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    patient = relationship("Patient", back_populates="allergies")
+
+
+class ChronicCondition(Base):
+    """🩺 Surunkali kasalliklar — modules/patients.py'dagi
+    /patients/{id}/chronic-conditions CRUD shu modelga tayanadi. `notes`
+    maydoni EncryptedText bilan shifrlangan (crypto_fields.py'dagi
+    patternga mos — medical_notes bilan bir xil), chunki bu erkin matn
+    tibbiy tafsilotlar (masalan davolash tarixi) o'z ichiga olishi mumkin."""
+
+    __tablename__ = "chronic_conditions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)  # masalan: "Qandli diabet II tur"
+    diagnosed_date = Column(Date, nullable=True)
+    status = Column(String, nullable=False, default="faol")  # CHRONIC_CONDITION_STATUSES
+    notes = Column(EncryptedText(aad_context="patient.chronic_notes"), nullable=True)
+
+    patient = relationship("Patient", back_populates="chronic_conditions")
+
+
+class TreatmentHistory(Base):
+    """💊 Davolanishlar tarixi (Prompt 2) — bemorga qo'yilgan tashxis va
+    tayinlangan davolash rejasi, sana bo'yicha vaqt chizig'i sifatida
+    ko'rsatiladi (templates/patient_detail.html, "Davolanishlar" tab).
+
+    `diagnosis` va `treatment` ikkalasi ham tibbiy sir hisoblanadi,
+    shuning uchun ChronicCondition.notes bilan bir xil patternga mos —
+    EncryptedText (crypto_fields.py) orqali AES-256-GCM bilan shifrlangan,
+    har biri o'zining aad_context'i bilan (boshqa maydonning shifrlangan
+    matni bu yerga "ko'chirib qo'yilishi" mumkin bo'lmasligi uchun).
+
+    appointment_id va doctor_id ATAYLAB nullable — yozuv aniq bir tashrif
+    yoki shifokorga bog'lanmasdan ham kiritilishi mumkin (masalan eski
+    qog'oz kartadan ko'chirilgan tarix). LabResult.doctor_id bilan bir xil
+    pattern: shifokor yoki tashrif keyinchalik o'chirilsa ham (agar shunday
+    funksiya qo'shilsa), davolanish yozuvining o'zi yo'qolmaydi — faqat
+    bog'lanishi bo'shab qoladi (ORM darajasida FK NULL bo'lib qoladi,
+    bu yerda ON DELETE CASCADE ishlatilmagan)."""
+
+    __tablename__ = "treatment_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    appointment_id = Column(
+        Integer, ForeignKey("appointments.id"), nullable=True, index=True
+    )
+    doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=True, index=True)
+    diagnosis = Column(
+        EncryptedText(aad_context="treatment.diagnosis"), nullable=True
+    )
+    treatment = Column(EncryptedText(aad_context="treatment.plan"), nullable=True)
+    date = Column(Date, nullable=False, default=datetime.date.today)
+
+    patient = relationship("Patient", back_populates="treatment_history")
+    appointment = relationship("Appointment")
+    doctor = relationship("Doctor")
+
+
+class PatientLoginOTP(Base):
+    """📲 FAZA 2 — Bemor portali uchun SMS orqali bir martalik login kodi
+    (OTP). Har bir kod so'rovi shu jadvalga bitta qator qo'shadi.
+
+    MUHIM: kod (6 xonali raqam) bazada HECH QACHON ochiq holda
+    saqlanmaydi — faqat `code_hash` orqali (bir tomonlama xesh). Kod
+    juda qisqa muddatli (bir necha daqiqa) va bir martalik bo'lgani
+    uchun sha256 kifoya (auth.py'dagi Argon2id — foydalanuvchi
+    parollari kabi uzoq muddatli maxfiy narsalar uchun ishlatiladi;
+    bu yerda vazifa boshqacha: tezkor, ko'p yozuvli tekshiruv)."""
+
+    __tablename__ = "patient_login_otp"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    code_hash = Column(String(128), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    # Tavsiya etilgan amal muddati: created_at + 5 daqiqa (qarang:
+    # modules/patient_portal.py, OTP_TTL_SECONDS).
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    # Noto'g'ri kod kiritish urinishlari soni — MAX_VERIFY_ATTEMPTS'dan
+    # oshsa, bu kod endi haqiqiy bo'lsa ham rad etiladi (brute-force
+    # himoyasi, rate_limiter.py'dagi so'rov-darajasidagi cheklovga
+    # qo'shimcha ikkinchi qatlam).
+    attempt_count = Column(Integer, nullable=False, default=0)
+
+    patient = relationship("Patient")
+
+
 class AuditLog(Base):
     """🧾 Audit jurnal (4-band) — kim, qachon, nima qildi. Write (yozuvchi)
     amallar (qo'shish/o'zgartirish/o'chirish/holat almashtirish) har birida
@@ -306,6 +469,28 @@ class AuditLog(Base):
     entity_id = Column(Integer, nullable=True, index=True)
     details = Column(String, nullable=True)                     # qisqa, inson o'qiy oladigan matn
     created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class GovIntegrationSettings(Base):
+    """🏛️ FAZA 3 (SKELETON) — Davlat raqamli platformasi (masalan OneID,
+    Raqamli sog'liqni saqlash) bilan integratsiya uchun bo'sh sozlamalar
+    jadvali.
+
+    MUHIM: bu FAZA hech qanday tashqi API bilan gaplashmaydi.
+    `is_enabled` shu bosqichda HAR DOIM False bo'lib qoladi — u faqat
+    kelajakda (rasmiy spetsifikatsiya e'lon qilingach) haqiqiy integratsiya
+    yoqilganda True qilinadi. `provider_name` va `config_json` hozircha
+    doim NULL; ular kelajakdagi provayder nomi va API kalitlari/sozlamalari
+    uchun joy egallab turibdi, xolos.
+    """
+
+    __tablename__ = "gov_integration_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    is_enabled = Column(Boolean, nullable=False, default=False)
+    provider_name = Column(String(64), nullable=True)  # masalan "OneID" — hozircha NULL
+    config_json = Column(Text, nullable=True)  # kelajakda API kalitlar uchun, hozircha NULL
+    updated_at = Column(DateTime, nullable=True)
 
 
 # NOTE: password hashing lives ONLY in auth.py (PBKDF2, hash_password /

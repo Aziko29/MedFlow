@@ -16,6 +16,10 @@
 logs/
 backups/
 
+# --- Bemor rasmlari (mahalliy yuklangan fayllar, git'ga kerak emas) ---
+static/uploads/patients/*
+!static/uploads/patients/.gitkeep
+
 # --- Python ---
 __pycache__/
 *.pyc

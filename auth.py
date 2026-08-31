@@ -1,4 +1,5 @@
 # auth.py
+import base64
 import hashlib
 import hmac
 import json
@@ -353,6 +354,98 @@ def get_current_user_optional(
     if user_id is None:
         return None
     return db.query(models.User).filter(models.User.id == user_id).first()
+
+# ==============================================
+# BEMOR PORTALI SESSIYASI (FAZA 2)
+#
+# Xodimlar sessiyasi (cf_session, yuqorida) bilan HECH QANDAY aloqasi
+# yo'q — alohida, parallel cookie va konstantalar. Ikkalasi bir
+# brauzerda bir vaqtda mavjud bo'lishi mumkin (masalan bir kompyuterda
+# reception xodimi ADMIN panelga, bemor esa portalga kirgan bo'lishi
+# mumkin — ular bir-biriga aralashmaydi).
+#
+# Signed-token mexanizmi xodimlar tokeni bilan BIR XIL (_sign — HMAC +
+# SECRET_KEY), lekin payload ichida MAJBURIY "type" maydoni bor
+# ("patient"), shuning uchun xodim tokeni bemor sifatida (yoki
+# aksincha) qabul qilinishi mumkin emas — _read_patient_session_token
+# buni aniq tekshiradi.
+# ==============================================
+
+PATIENT_SESSION_COOKIE_NAME = "mf_patient_session"
+# 7 kun: bemor tez-tez qayta login qilishni xohlamaydi (SMS har safar
+# pul/vaqt sarflaydi), va bu sessiya FAQAT o'qish huquqi beradi (o'z
+# navbatlari/tahlillar/to'lovlar tarixini ko'rish) — xodim sessiyasidagi
+# (8 soat) kabi qattiq muddat shart emas.
+PATIENT_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7  # 7 kun
+
+_PATIENT_TOKEN_TYPE = "patient"
+
+
+def create_patient_session_token(patient_id: int) -> str:
+    """Bemor uchun signed-token yaratadi. Payload ichida "type":"patient"
+    MAJBURIY bo'lgani uchun, bu token _read_session_token (xodimlar
+    uchun) orqali hech qachon to'g'ri o'qilmaydi va aksincha."""
+    payload = json.dumps(
+        {"type": _PATIENT_TOKEN_TYPE, "patient_id": patient_id, "issued_at": int(time.time())},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    encoded = base64.urlsafe_b64encode(payload.encode()).decode()
+    return f"{encoded}.{_sign(encoded)}"
+
+
+def _read_patient_session_token(token: str) -> Optional[int]:
+    """Tokenni tekshiradi va ichidagi patient_id'ni qaytaradi (yaroqsiz/
+    muddati o'tgan/type mos kelmasa — None)."""
+    try:
+        encoded, signature = token.split(".", 1)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(_sign(encoded), signature):
+        return None
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(encoded.encode()).decode())
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or payload.get("type") != _PATIENT_TOKEN_TYPE:
+        return None
+    if time.time() - float(payload.get("issued_at", 0)) > PATIENT_SESSION_MAX_AGE_SECONDS:
+        return None
+    patient_id = payload.get("patient_id")
+    if not isinstance(patient_id, int):
+        return None
+    return patient_id
+
+
+def get_current_patient(
+    mf_patient_session: Optional[str] = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> Optional[models.Patient]:
+    """get_current_user_optional'ga PARALLEL — bemor sessiyasi uchun,
+    xodim sessiyasiga hech qanday ta'sir qilmaydi."""
+    if not mf_patient_session:
+        return None
+    patient_id = _read_patient_session_token(mf_patient_session)
+    if patient_id is None:
+        return None
+    return db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+
+
+def require_patient(
+    mf_patient_session: Optional[str] = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> models.Patient:
+    """get_current_user'ga PARALLEL — sessiya yo'q/noto'g'ri bo'lsa 401."""
+    if not mf_patient_session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tizimga kirilmagan")
+    patient_id = _read_patient_session_token(mf_patient_session)
+    if patient_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessiya yaroqsiz")
+    patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+    if patient is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bemor topilmadi")
+    return patient
+
 
 def require_role(*allowed_roles: str) -> Callable[[models.User], models.User]:
     def _dependency(user: models.User = Depends(get_current_user)) -> models.User:

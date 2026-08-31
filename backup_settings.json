@@ -4,7 +4,7 @@
       "type": "folder",
       "label": "Papka (shu kompyuterda)",
       "path": "D:\\Desktop\\BackUp",
-      "enabled": false
+      "enabled": true
     },
     {
       "type": "network",

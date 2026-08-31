@@ -6,13 +6,19 @@ Field names mirror models.py exactly so that
 always works without silent remapping bugs.
 """
 import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import re
 
-from models import APPOINTMENT_STATUSES, SELF_PASSWORD_CHANGE_LIMIT, USER_ROLES
+from models import (
+    ALLERGY_SEVERITIES,
+    APPOINTMENT_STATUSES,
+    CHRONIC_CONDITION_STATUSES,
+    SELF_PASSWORD_CHANGE_LIMIT,
+    USER_ROLES,
+)
 
 _USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -120,6 +126,9 @@ class DoctorBase(BaseModel):
     room: Optional[str] = None
     consultation_price: int = Field(default=0, ge=0)
     working_hours: Optional[str] = None
+    license_number: Optional[str] = None
+    experience_years: Optional[int] = Field(default=None, ge=0, le=80)
+    qualification_category: Optional[str] = None
 
 
 class DoctorCreate(DoctorBase):
@@ -134,6 +143,16 @@ class DoctorRead(DoctorBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     is_active: bool
+    # photo_path DoctorCreate/DoctorUpdate'da yo'q — patients.photo_path
+    # bilan bir xil pattern: faqat POST /{doctor_id}/photo orqali (fayl
+    # yuklab) o'rnatiladi, oddiy shifokor qo'shish/tahrirlash formasi orqali
+    # emas.
+    photo_path: Optional[str] = None
+
+
+class DoctorPhotoUploadResponse(BaseModel):
+    """POST /api/doctors/{doctor_id}/photo javobi."""
+    photo_path: str
 
 
 # ── Patient ───────────────────────────────────────────────────────────
@@ -144,6 +163,9 @@ class PatientBase(BaseModel):
     birth_date: Optional[datetime.date] = None
     address: Optional[str] = None
     medical_notes: Optional[str] = None
+    blood_type: Optional[str] = Field(default=None, max_length=3)
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
 
     @field_validator("gender")
     @classmethod
@@ -167,6 +189,15 @@ class PatientRead(PatientBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime.datetime
+    # photo_path PatientCreate/PatientUpdate'da yo'q — u faqat
+    # POST /{patient_id}/photo orqali (fayl yuklab) o'rnatiladi, oddiy
+    # bemor qo'shish/tahrirlash formasi orqali emas.
+    photo_path: Optional[str] = None
+
+
+class PatientPhotoUploadResponse(BaseModel):
+    """POST /api/patients/{patient_id}/photo javobi."""
+    photo_path: str
 
 
 class PatientFinancials(BaseModel):
@@ -178,6 +209,82 @@ class PatientFinancials(BaseModel):
 
 class PatientDetail(PatientRead):
     financials: PatientFinancials
+
+
+# ── Allergy ───────────────────────────────────────────────────────────
+class AllergyBase(BaseModel):
+    substance: str = Field(..., min_length=1)
+    reaction: Optional[str] = None
+    severity: Optional[str] = None
+
+    @field_validator("severity")
+    @classmethod
+    def _validate_severity(cls, value: Optional[str]) -> Optional[str]:
+        if value in (None, ""):
+            return None
+        if value not in ALLERGY_SEVERITIES:
+            raise ValueError(
+                f"severity {', '.join(ALLERGY_SEVERITIES)} dan biri bo'lishi kerak"
+            )
+        return value
+
+
+class AllergyCreate(AllergyBase):
+    pass
+
+
+class AllergyRead(AllergyBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    patient_id: int
+    noted_at: datetime.datetime
+
+
+# ── ChronicCondition ──────────────────────────────────────────────────
+class ChronicConditionBase(BaseModel):
+    name: str = Field(..., min_length=1)
+    diagnosed_date: Optional[datetime.date] = None
+    status: str = "faol"
+    notes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        if value not in CHRONIC_CONDITION_STATUSES:
+            raise ValueError(
+                f"status {', '.join(CHRONIC_CONDITION_STATUSES)} dan biri bo'lishi kerak"
+            )
+        return value
+
+
+class ChronicConditionCreate(ChronicConditionBase):
+    pass
+
+
+class ChronicConditionRead(ChronicConditionBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    patient_id: int
+
+
+# ── TreatmentHistory ─────────────────────────────────────────────────
+class TreatmentHistoryBase(BaseModel):
+    appointment_id: Optional[int] = None
+    doctor_id: Optional[int] = None
+    diagnosis: Optional[str] = None
+    treatment: Optional[str] = None
+    date: Optional[datetime.date] = None
+
+
+class TreatmentHistoryCreate(TreatmentHistoryBase):
+    pass
+
+
+class TreatmentHistoryRead(TreatmentHistoryBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    patient_id: int
+    date: datetime.date
 
 
 # ── Appointment ───────────────────────────────────────────────────────
@@ -283,6 +390,76 @@ class DashboardSummary(BaseModel):
     total_debt: str
 
 
+# ── Reports (admin, modules/reports.py) — 1-bosqich: umumiy hajm ──────
+class ReportOverview(BaseModel):
+    total_patients: int
+    total_doctors_active: int
+    total_doctors_inactive: int
+    period_appointments: int
+
+
+# ── Reports — 2-bosqich: status bo'yicha taqsimot ──────────────────────
+class StatusCount(BaseModel):
+    status: str
+    label: str
+    count: int
+    percentage: float
+
+
+class ReportStatusBreakdown(BaseModel):
+    items: List[StatusCount]
+    total: int
+
+
+# ── Reports — 3-bosqich: shifokor samaradorligi ────────────────────────
+class DoctorPerformanceRow(BaseModel):
+    doctor_id: int
+    doctor_name: str
+    specialty: str
+    total: int
+    completed: int
+    cancelled: int
+    delayed: int
+    no_show: int
+    revenue: int
+
+
+# ── Reports — 4-bosqich: bekor qilish sabablari ────────────────────────
+class CancelReasonRow(BaseModel):
+    reason: str
+    count: int
+    percentage: float
+
+
+# ── Reports — 5-bosqich: band vaqt tahlili ─────────────────────────────
+class HourlyLoadRow(BaseModel):
+    hour: int
+    count: int
+
+
+class WeekdayLoadRow(BaseModel):
+    weekday: int
+    weekday_label: str
+    count: int
+
+
+# ── Reports — 6-bosqich: yangi/qaytgan bemorlar nisbati ────────────────
+class PatientRetention(BaseModel):
+    new_patients: int
+    returning_patients: int
+    new_percentage: float
+    returning_percentage: float
+
+
+# ── Reports — 7-bosqich: oylik davr taqqoslash ─────────────────────────
+class PeriodTrendRow(BaseModel):
+    period_label: str
+    appointments: int
+    completed: int
+    cancelled: int
+    revenue: int
+
+
 # ── Audit Log (4-band) ───────────────────────────────────────────────
 class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -324,3 +501,19 @@ class AdminPasswordResetResponse(BaseModel):
     username: str
     temporary_password: str
     note: str = "Bu vaqtinchalik parol faqat bir marta ko'rsatiladi — uni xodimga xavfsiz yo'l bilan yetkazing."
+
+
+# ── Bemor portali (FAZA 2) — telefon + SMS-kod bilan login ────────────
+class PatientPortalCodeRequest(BaseModel):
+    phone: str = Field(..., min_length=5)
+
+
+class PatientPortalCodeResponse(BaseModel):
+    # Har doim bir xil neytral xabar — telefon raqami tizimda mavjud
+    # yoki yo'qligini oshkor qilmaslik uchun (enumeration himoyasi).
+    message: str = "Agar bunday raqam ro'yxatda mavjud bo'lsa, tasdiqlash kodi SMS orqali yuborildi."
+
+
+class PatientPortalVerifyRequest(BaseModel):
+    phone: str = Field(..., min_length=5)
+    code: str = Field(..., min_length=4, max_length=8)

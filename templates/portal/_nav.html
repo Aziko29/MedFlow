@@ -1,0 +1,25 @@
+<!-- templates/portal/_nav.html — bemor portali uchun soddalashtirilgan
+     navigatsiya (admin panelning sidebar'iga hech qanday aloqasi yo'q). -->
+<nav class="portal-nav">
+    <div>
+        <div class="brand"><i class="fa-solid fa-heart-pulse"></i> MedFlow</div>
+        <div class="patient-name">{{ current_patient.fullname if current_patient else "" }}</div>
+    </div>
+    <div class="nav-right">
+        <div class="portal-tabs">
+            <a href="/portal/dashboard" class="{{ 'active' if request.url.path == '/portal/dashboard' else '' }}">Navbatlar</a>
+            <a href="/portal/lab-results" class="{{ 'active' if request.url.path == '/portal/lab-results' else '' }}">Tahlillar</a>
+            <a href="/portal/payments" class="{{ 'active' if request.url.path == '/portal/payments' else '' }}">To'lovlar</a>
+        </div>
+        <button class="logout-btn" onclick="portalLogout()"><i class="fa-solid fa-right-from-bracket"></i> Chiqish</button>
+    </div>
+</nav>
+<script>
+    async function portalLogout() {
+        try {
+            await fetch('/portal/logout', { method: 'POST', credentials: 'same-origin' });
+        } finally {
+            window.location.href = '/portal/login';
+        }
+    }
+</script>

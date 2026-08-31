@@ -9,9 +9,13 @@ Route ordering matters here: static/action paths (/add, /list) are
 declared BEFORE the dynamic /{patient_id} path parameter, so FastAPI
 never mistakes "/add" for a patient_id.
 """
-from typing import Dict, List
+import io
+import os
+import time
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -20,6 +24,21 @@ import schemas
 from audit import log_action
 from auth import get_current_user, require_role
 from database import get_db
+
+# 🖼️ Bemor rasmi — yuklash cheklovlari va saqlash joyi.
+# Loyiha ildizi: bu fayl <root>/modules/patients.py'da yotadi, shuning
+# uchun ikki qavat yuqoriga chiqib <root>/static/uploads/patients'ga
+# yetamiz (main.py'dagi StaticFiles("/static") shu "static" papkani ochiq
+# qiladi, demak natijaviy rasm /static/uploads/patients/{id}.jpg orqali
+# ko'rinadi).
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
+PATIENT_PHOTOS_DIR = os.path.join(_PROJECT_ROOT, "static", "uploads", "patients")
+
+MAX_PHOTO_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
+ALLOWED_PHOTO_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
+ALLOWED_PHOTO_FORMATS = {"JPEG", "PNG"}
+PHOTO_THUMBNAIL_SIZE = (400, 400)
 
 # ⬅️ YANGI (1-band, KRITIK): dependencies=[Depends(get_current_user)] — bu
 # modulning BARCHA endpointlari (shu jumladan hozirgi va kelajakda
@@ -93,9 +112,62 @@ def add_patient(
 
 
 @router.get("/list", response_model=List[schemas.PatientRead])
-def list_patients(db: Session = Depends(get_db)) -> List[models.Patient]:
-    """Barcha bemorlar ro'yxati."""
-    return db.query(models.Patient).order_by(models.Patient.id.desc()).all()
+def list_patients(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+    allergy: Optional[str] = None,
+    chronic_condition: Optional[str] = None,
+) -> List[models.Patient]:
+    """Barcha bemorlar ro'yxati.
+
+    Ixtiyoriy query-parametrlar orqali filtrlash mumkin (4-band):
+      - ``allergy=<matn>``            — Allergy.substance bo'yicha
+        (LIKE, katta-kichik harflarga sezgir emas)
+      - ``chronic_condition=<matn>``  — ChronicCondition.name bo'yicha
+        (xuddi shunday)
+
+    Ikkalasi ham berilsa AND mantig'ida qo'llaniladi. Har biri alohida
+    EXISTS-uslubidagi subquery (``Patient.id.in_(...)``) sifatida
+    qo'llanadi — ``patients`` bilan ``allergies``/``chronic_conditions``ni
+    to'g'ridan-to'g'ri JOIN qilish o'rniga, chunki bitta bemorning bir
+    nechta allergiyasi/kasalligi bo'lishi mumkin va JOIN natijada bemorni
+    bir necha marta takrorlab yuborardi (dublikat qatorlar).
+
+    🔐 Bu ikki filtr tibbiy ma'lumot (kim qanday allergiya/kasallikka ega
+    ekanini oshkor qiladi), shuning uchun faqat admin/reception/doctor
+    ishlata oladi — cashier hatto natijada allergiya matni ko'rsatilmasa
+    ham, "qaysi bemorlar filtrga mos keldi" degan yon-kanal orqali tibbiy
+    ma'lumotni bilib olmasligi kerak (medical-security-auditor: least
+    privilege / data leakage oldini olish).
+    """
+    if (allergy or chronic_condition) and user.role not in (
+        "admin",
+        "reception",
+        "doctor",
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Bu filtr faqat admin/reception/doctor uchun ruxsat etilgan (tibbiy ma'lumot)",
+        )
+
+    query = db.query(models.Patient)
+    if allergy:
+        query = query.filter(
+            models.Patient.id.in_(
+                db.query(models.Allergy.patient_id).filter(
+                    models.Allergy.substance.ilike(f"%{allergy}%")
+                )
+            )
+        )
+    if chronic_condition:
+        query = query.filter(
+            models.Patient.id.in_(
+                db.query(models.ChronicCondition.patient_id).filter(
+                    models.ChronicCondition.name.ilike(f"%{chronic_condition}%")
+                )
+            )
+        )
+    return query.order_by(models.Patient.id.desc()).all()
 
 
 # ── Dynamic path parameter routes ───────────────────────────────────
@@ -149,6 +221,366 @@ def delete_patient(
     db.commit()
     log_action(db, user, "patient.delete", "Patient", patient_id, f"fullname={fullname}")
     return None
+
+
+# ── Bemor rasmi ──────────────────────────────────────────────────────
+@router.post(
+    "/{patient_id}/photo",
+    response_model=schemas.PatientPhotoUploadResponse,
+    dependencies=[Depends(require_role("admin", "reception"))],
+)
+async def upload_patient_photo(
+    patient_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> schemas.PatientPhotoUploadResponse:
+    """Bemor rasmini yuklash. Faqat JPG/PNG qabul qilinadi, hajm 2MB dan
+    oshmasligi kerak. Pillow bilan 400x400 (proportional, bo'lmagan
+    tomonlari kesilmaydi) thumbnaylga kichraytirilib,
+    static/uploads/patients/{patient_id}.jpg sifatida saqlanadi va
+    Patient.photo_path yangilanadi."""
+    patient = _get_patient_or_404(db, patient_id)
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_PHOTO_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Faqat JPG yoki PNG formatidagi rasm qabul qilinadi",
+        )
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Bo'sh fayl yuklab bo'lmaydi")
+    if len(raw) > MAX_PHOTO_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Rasm hajmi 2MB dan oshmasligi kerak")
+
+    # Content-Type sarlavhasi klient tomonidan soxtalashtirilishi mumkin,
+    # shuning uchun haqiqiy tekshiruv — Pillow orqali faylni ochib
+    # ko'rish. verify() faylni tekshiradi-yu, lekin keyin qayta
+    # ishlatib bo'lmaydi (Pillow'ning o'zi shuni talab qiladi), shuning
+    # uchun tekshiruvdan so'ng xotiradagi baytlardan qayta ochamiz.
+    try:
+        probe = Image.open(io.BytesIO(raw))
+        probe.verify()
+        image = Image.open(io.BytesIO(raw))
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="Fayl yaroqli rasm emas")
+
+    if image.format not in ALLOWED_PHOTO_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail="Faqat JPG yoki PNG formatidagi rasm qabul qilinadi",
+        )
+
+    image = image.convert("RGB")
+    image.thumbnail(PHOTO_THUMBNAIL_SIZE, Image.LANCZOS)
+
+    os.makedirs(PATIENT_PHOTOS_DIR, exist_ok=True)
+    file_path = os.path.join(PATIENT_PHOTOS_DIR, f"{patient_id}.jpg")
+    image.save(file_path, format="JPEG", quality=85)
+
+    # Cache-bust: fayl nomi doim bir xil (patient_id.jpg), shuning uchun
+    # eski rasm brauzer keshidan ko'rinib qolmasligi uchun URL'ga versiya
+    # so'rov parametri qo'shiladi.
+    photo_path = f"/static/uploads/patients/{patient_id}.jpg?v={int(time.time())}"
+    patient.photo_path = photo_path
+    db.commit()
+
+    log_action(
+        db,
+        user,
+        "patient.photo_upload",
+        "Patient",
+        patient.id,
+        f"fullname={patient.fullname}",
+    )
+    return schemas.PatientPhotoUploadResponse(photo_path=photo_path)
+
+
+# ── Allergiyalar (bemor sub-resursi) ────────────────────────────────
+# Ruxsat: admin/reception/doctor — cashier bu ma'lumotni ko'ra olmasin
+# (moliya xodimiga bemorning tibbiy/allergiya tarixi kerak emas).
+def _get_allergy_or_404(db: Session, patient_id: int, allergy_id: int) -> models.Allergy:
+    allergy = (
+        db.query(models.Allergy)
+        .filter(models.Allergy.id == allergy_id, models.Allergy.patient_id == patient_id)
+        .first()
+    )
+    if allergy is None:
+        raise HTTPException(status_code=404, detail="Allergiya yozuvi topilmadi")
+    return allergy
+
+
+@router.post(
+    "/{patient_id}/allergies",
+    response_model=schemas.AllergyRead,
+    status_code=201,
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def add_allergy(
+    patient_id: int,
+    allergy_data: schemas.AllergyCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.Allergy:
+    _get_patient_or_404(db, patient_id)
+    new_allergy = models.Allergy(patient_id=patient_id, **allergy_data.model_dump())
+    db.add(new_allergy)
+    db.commit()
+    db.refresh(new_allergy)
+    log_action(
+        db,
+        user,
+        "patient.allergy_add",
+        "Allergy",
+        new_allergy.id,
+        f"patient_id={patient_id}, substance={new_allergy.substance}",
+    )
+    return new_allergy
+
+
+@router.get(
+    "/{patient_id}/allergies",
+    response_model=List[schemas.AllergyRead],
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def list_allergies(
+    patient_id: int, db: Session = Depends(get_db)
+) -> List[models.Allergy]:
+    _get_patient_or_404(db, patient_id)
+    return (
+        db.query(models.Allergy)
+        .filter(models.Allergy.patient_id == patient_id)
+        .order_by(models.Allergy.id.desc())
+        .all()
+    )
+
+
+@router.delete(
+    "/{patient_id}/allergies/{allergy_id}",
+    status_code=204,
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def delete_allergy(
+    patient_id: int,
+    allergy_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> None:
+    allergy = _get_allergy_or_404(db, patient_id, allergy_id)
+    substance = allergy.substance
+    db.delete(allergy)
+    db.commit()
+    log_action(
+        db,
+        user,
+        "patient.allergy_delete",
+        "Allergy",
+        allergy_id,
+        f"patient_id={patient_id}, substance={substance}",
+    )
+    return None
+
+
+# ── Surunkali kasalliklar (bemor sub-resursi) ───────────────────────
+def _get_chronic_condition_or_404(
+    db: Session, patient_id: int, condition_id: int
+) -> models.ChronicCondition:
+    condition = (
+        db.query(models.ChronicCondition)
+        .filter(
+            models.ChronicCondition.id == condition_id,
+            models.ChronicCondition.patient_id == patient_id,
+        )
+        .first()
+    )
+    if condition is None:
+        raise HTTPException(status_code=404, detail="Surunkali kasallik yozuvi topilmadi")
+    return condition
+
+
+@router.post(
+    "/{patient_id}/chronic-conditions",
+    response_model=schemas.ChronicConditionRead,
+    status_code=201,
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def add_chronic_condition(
+    patient_id: int,
+    condition_data: schemas.ChronicConditionCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.ChronicCondition:
+    _get_patient_or_404(db, patient_id)
+    new_condition = models.ChronicCondition(
+        patient_id=patient_id, **condition_data.model_dump()
+    )
+    db.add(new_condition)
+    db.commit()
+    db.refresh(new_condition)
+    log_action(
+        db,
+        user,
+        "patient.chronic_add",
+        "ChronicCondition",
+        new_condition.id,
+        f"patient_id={patient_id}, name={new_condition.name}",
+    )
+    return new_condition
+
+
+@router.get(
+    "/{patient_id}/chronic-conditions",
+    response_model=List[schemas.ChronicConditionRead],
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def list_chronic_conditions(
+    patient_id: int, db: Session = Depends(get_db)
+) -> List[models.ChronicCondition]:
+    _get_patient_or_404(db, patient_id)
+    return (
+        db.query(models.ChronicCondition)
+        .filter(models.ChronicCondition.patient_id == patient_id)
+        .order_by(models.ChronicCondition.id.desc())
+        .all()
+    )
+
+
+@router.delete(
+    "/{patient_id}/chronic-conditions/{condition_id}",
+    status_code=204,
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def delete_chronic_condition(
+    patient_id: int,
+    condition_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> None:
+    condition = _get_chronic_condition_or_404(db, patient_id, condition_id)
+    name = condition.name
+    db.delete(condition)
+    db.commit()
+    log_action(
+        db,
+        user,
+        "patient.chronic_delete",
+        "ChronicCondition",
+        condition_id,
+        f"patient_id={patient_id}, name={name}",
+    )
+    return None
+
+
+# ── Davolanishlar tarixi (bemor sub-resursi, Prompt 2) ──────────────
+# Ruxsat matritsasi (audit.py + medical-security-auditor: least privilege):
+#   - Yozish (POST)  → faqat admin/doctor: tashxis/davolash rejasini faqat
+#     shifokorning o'zi (yoki admin, texnik xizmat/tuzatish uchun) kirita
+#     oladi — reception va cashier tibbiy qaror qabul qilmaydi.
+#   - O'qish (GET)   → admin/reception/doctor: reception navbat/tashrifni
+#     tashkillashtirish uchun tarixni ko'rishi kerak bo'lishi mumkin, lekin
+#     cashier (moliyaviy rol) tibbiy tafsilotga umuman kirmasin.
+@router.post(
+    "/{patient_id}/treatment-history",
+    response_model=schemas.TreatmentHistoryRead,
+    status_code=201,
+    dependencies=[Depends(require_role("doctor", "admin"))],
+)
+def add_treatment_history(
+    patient_id: int,
+    treatment_data: schemas.TreatmentHistoryCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.TreatmentHistory:
+    _get_patient_or_404(db, patient_id)
+
+    # Agar appointment_id berilgan bo'lsa — u shu bemorga tegishli
+    # ekanini tekshiramiz (boshqa bemorning tashrifiga yozuvni "yopishtirib
+    # qo'yish" — BOLA/IDOR xurujining oldini olish).
+    if treatment_data.appointment_id is not None:
+        appointment = (
+            db.query(models.Appointment)
+            .filter(
+                models.Appointment.id == treatment_data.appointment_id,
+                models.Appointment.patient_id == patient_id,
+            )
+            .first()
+        )
+        if appointment is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Ko'rsatilgan tashrif shu bemorga tegishli emas",
+            )
+
+    if treatment_data.doctor_id is not None:
+        doctor = (
+            db.query(models.Doctor)
+            .filter(models.Doctor.id == treatment_data.doctor_id)
+            .first()
+        )
+        if doctor is None:
+            raise HTTPException(status_code=404, detail="Shifokor topilmadi")
+
+    payload = treatment_data.model_dump()
+    # date berilmagan (None) bo'lsa, ustunni umuman o'rnatmaymiz — shunda
+    # models.TreatmentHistory.date'ning Python-side default'i
+    # (datetime.date.today) ishga tushadi. Agar bu yerda payload["date"]=None
+    # aniq o'rnatilsa, SQLAlchemy buni "ataylab None qilingan" deb hisoblab,
+    # default'ni chetlab o'tar edi va NOT NULL constraint buzilardi.
+    if payload.get("date") is None:
+        payload.pop("date", None)
+
+    new_treatment = models.TreatmentHistory(patient_id=patient_id, **payload)
+    db.add(new_treatment)
+    db.commit()
+    db.refresh(new_treatment)
+    log_action(
+        db,
+        user,
+        "patient.treatment_add",
+        "TreatmentHistory",
+        new_treatment.id,
+        f"patient_id={patient_id}, date={new_treatment.date}",
+    )
+    return new_treatment
+
+
+@router.get(
+    "/{patient_id}/treatment-history",
+    response_model=List[schemas.TreatmentHistoryRead],
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def list_treatment_history(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> List[models.TreatmentHistory]:
+    _get_patient_or_404(db, patient_id)
+    history = (
+        db.query(models.TreatmentHistory)
+        .filter(models.TreatmentHistory.patient_id == patient_id)
+        .order_by(
+            models.TreatmentHistory.date.desc(), models.TreatmentHistory.id.desc()
+        )
+        .all()
+    )
+    # 🧾 Diagnoz/davolash rejasi eng nozik tibbiy ma'lumot hisoblanadi,
+    # shuning uchun (boshqa oddiy GET endpointlaridan farqli o'laroq) bu
+    # yerda O'QISH ham audit qilinadi — "kim, qachon, qaysi bemorning
+    # davolanish tarixini ko'rdi" (medical-security-auditor: immutable
+    # audit log, Append-Only). Har bir qatorni emas, bitta ro'yxat
+    # so'rovini bitta yozuv sifatida qayd etamiz — aks holda audit_logs
+    # jadvali har bir sahifa yuklanishida keraksiz tez to'lib ketardi.
+    log_action(
+        db,
+        user,
+        "patient.treatment_view",
+        "TreatmentHistory",
+        patient_id,
+        f"patient_id={patient_id}, count={len(history)}",
+    )
+    return history
 
 
 def register_module() -> Dict[str, object]:

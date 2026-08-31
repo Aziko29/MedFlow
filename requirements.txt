@@ -12,6 +12,7 @@ alembic>=1.13              # DB migratsiyalari — schema o'zgarishlari endi
 argon2-cffi>=23.1        # Parol xeshlash — Argon2id (OWASP tavsiyasi)
 slowapi>=0.1.9           # Rate-limiting — /login uchun brute-force himoyasi
 cryptography>=42.0       # Maydon darajasidagi shifrlash (AES-256-GCM) — crypto_fields.py
+Pillow>=10.3              # Bemor rasmini 400x400 thumbnaylga kichraytirish — modules/patients.py
 
 # 🧠 Ixtiyoriy — faqat CLINICFLOW_REDIS_URL sozlansa kerak bo'ladi (4-band):
 # ko'p-worker (gunicorn --workers N > 1) rejimida user-cache (auth.py) va
