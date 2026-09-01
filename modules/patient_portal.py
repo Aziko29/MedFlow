@@ -264,7 +264,16 @@ def verify_login_code(
 @router.post("/logout")
 def portal_logout():
     result = JSONResponse(content={"status": "ok"})
-    result.delete_cookie(PATIENT_SESSION_COOKIE_NAME)
+    # ⬅️ TUZATILDI (session-cookie xavfsizligi, 15.2-band): set_cookie()'da
+    # ishlatilgan httponly/samesite/secure bilan BIR XIL parametrlar bilan
+    # o'chirilishi kerak — aks holda ba'zi brauzerlarda cookie o'chmay qolishi
+    # mumkin (qarang: modules/auth_module.py'dagi xuddi shu tuzatish).
+    result.delete_cookie(
+        key=PATIENT_SESSION_COOKIE_NAME,
+        httponly=True,
+        samesite="lax",
+        secure=IS_PRODUCTION,
+    )
     return result
 
 

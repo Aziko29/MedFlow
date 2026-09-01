@@ -57,14 +57,14 @@
         <div class="brand"><i class="fa-solid fa-heart-pulse"></i> ClinicFlow</div>
         <div class="subtitle">Tizimga kirish uchun login va parolingizni kiriting</div>
         <div id="loginError" class="form-error"></div>
-        <form id="loginForm" onsubmit="submitLogin(event)">
+        <form id="loginForm" onsubmit="submitLogin(event)" autocomplete="off">
             <div class="form-group">
                 <label for="username">Login:</label>
-                <input type="text" id="username" required autofocus>
+                <input type="text" id="username" required autofocus autocomplete="off">
             </div>
             <div class="form-group">
                 <label for="password">Parol:</label>
-                <input type="password" id="password" required>
+                <input type="password" id="password" required autocomplete="off">
             </div>
             <button type="submit" class="btn-login" id="loginBtn">Kirish</button>
         </form>

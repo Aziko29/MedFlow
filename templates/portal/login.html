@@ -60,10 +60,10 @@
         <div id="msgBox" class="msg"></div>
 
         <div id="stepPhone" class="step active">
-            <form onsubmit="requestCode(event)">
+            <form onsubmit="requestCode(event)" autocomplete="off">
                 <div class="form-group">
                     <label for="phone">Telefon raqami:</label>
-                    <input type="tel" id="phone" placeholder="+998901234567" required autofocus inputmode="tel">
+                    <input type="tel" id="phone" placeholder="+998901234567" required autofocus inputmode="tel" autocomplete="off">
                 </div>
                 <button type="submit" class="btn" id="phoneBtn">Kod yuborish</button>
             </form>
@@ -72,7 +72,7 @@
         <div id="stepCode" class="step">
             <div class="form-group">
                 <label for="code">SMS orqali kelgan kod:</label>
-                <input type="text" id="code" maxlength="6" inputmode="numeric" placeholder="000000" autofocus>
+                <input type="text" id="code" maxlength="6" inputmode="numeric" placeholder="000000" autofocus autocomplete="off">
             </div>
             <button type="submit" class="btn" id="codeBtn" onclick="verifyCode(event)">Tasdiqlash</button>
             <button type="button" class="btn-link" onclick="backToPhone()">Boshqa raqam kiritish</button>

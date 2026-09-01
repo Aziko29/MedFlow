@@ -9,6 +9,7 @@ Route ordering matters here: static/action paths (/add, /list) are
 declared BEFORE the dynamic /{patient_id} path parameter, so FastAPI
 never mistakes "/add" for a patient_id.
 """
+import datetime
 import io
 import os
 import time
@@ -151,6 +152,24 @@ def list_patients(
         )
 
     query = db.query(models.Patient)
+
+    # ⬅️ YANGI: lab_doctor faqat O'ZIGA biriktirilgan bemorlarni ko'radi —
+    # "biriktirilgan" LabResult.doctor_id == user.doctor_id orqali
+    # aniqlanadi ("doctor" roli uchun ishlatiladigan User.doctor_id bilan
+    # bir xil bog'lanish naqshi). doctor_id sozlanmagan bo'lsa (nazariy
+    # holat), bo'sh ro'yxat qaytariladi — boshqa lab shifokorlarining
+    # bemorlari sizib chiqmasligi kerak.
+    if user.role == "lab_doctor":
+        if user.doctor_id is None:
+            return []
+        query = query.filter(
+            models.Patient.id.in_(
+                db.query(models.LabResult.patient_id).filter(
+                    models.LabResult.doctor_id == user.doctor_id
+                )
+            )
+        )
+
     if allergy:
         query = query.filter(
             models.Patient.id.in_(
@@ -168,6 +187,54 @@ def list_patients(
             )
         )
     return query.order_by(models.Patient.id.desc()).all()
+
+
+# ── Palata (statsionar davolash, Prompt 7) ──────────────────────────
+# Bu ikkita GET /admitted va /rooms — STATIK yo'llar, shuning uchun
+# /{patient_id} dinamik yo'lidan OLDIN e'lon qilinishi shart (aks holda
+# FastAPI "admitted"/"rooms"ni patient_id sifatida talqin qilib, 422
+# xatolik qaytarardi — fayl boshidagi izohdagi tamoyilning o'zi).
+#
+# Ruxsat: admin/reception/doctor — allergiya/surunkali kasallik
+# ro'yxatlari bilan bir xil patternga mos (tibbiy/statsionar ma'lumot,
+# cashier va lab_doctor'ga kerak emas).
+@router.get(
+    "/admitted",
+    response_model=List[schemas.PatientRoomResponse],
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def list_admitted_patients(db: Session = Depends(get_db)) -> List[models.Patient]:
+    """Hozir palatada yotgan (is_admitted=True) barcha bemorlar."""
+    return (
+        db.query(models.Patient)
+        .filter(models.Patient.is_admitted.is_(True))
+        .order_by(models.Patient.room_number.asc())
+        .all()
+    )
+
+
+@router.get(
+    "/rooms",
+    response_model=List[schemas.RoomGroup],
+    dependencies=[Depends(require_role("admin", "reception", "doctor"))],
+)
+def list_rooms(db: Session = Depends(get_db)) -> List[schemas.RoomGroup]:
+    """Barcha band palatalar va har biridagi (hozir yotgan) bemorlar,
+    palata raqami bo'yicha guruhlangan."""
+    admitted = (
+        db.query(models.Patient)
+        .filter(models.Patient.is_admitted.is_(True))
+        .order_by(models.Patient.room_number.asc(), models.Patient.id.asc())
+        .all()
+    )
+    rooms: Dict[str, List[models.Patient]] = {}
+    for patient in admitted:
+        room = patient.room_number or "Noma'lum"
+        rooms.setdefault(room, []).append(patient)
+    return [
+        schemas.RoomGroup(room_number=room, patients=patients)
+        for room, patients in sorted(rooms.items())
+    ]
 
 
 # ── Dynamic path parameter routes ───────────────────────────────────
@@ -296,6 +363,101 @@ async def upload_patient_photo(
         f"fullname={patient.fullname}",
     )
     return schemas.PatientPhotoUploadResponse(photo_path=photo_path)
+
+
+# ── Palataga yotqizish / chiqarish (bemor sub-resursi, Prompt 7) ────
+# Ruxsat: faqat doctor va reception yotqizish/chiqarish qila oladi
+# (talab #4). Admin bu yerda YOZISH huquqiga ega emas — talabda admin
+# uchun faqat "barcha palata ma'lumotlarini ko'rish" ko'rsatilgan,
+# yotqizish/chiqarish esa doctor/reception ishi hisoblanadi.
+@router.post(
+    "/{patient_id}/admit",
+    response_model=schemas.PatientRoomResponse,
+    dependencies=[Depends(require_role("doctor", "reception"))],
+)
+def admit_patient(
+    patient_id: int,
+    admit_data: schemas.PatientRoomUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.Patient:
+    """Bemorni palataga yotqizish. room_number MAJBURIY."""
+    patient = _get_patient_or_404(db, patient_id)
+
+    if not admit_data.room_number:
+        raise HTTPException(status_code=400, detail="Palata raqami ko'rsatilishi shart")
+
+    if patient.is_admitted:
+        raise HTTPException(
+            status_code=409,
+            detail="Bemor allaqachon palatada — avval chiqarish (discharge) kerak",
+        )
+
+    # 🛏️ Palata bandligi: shu palata raqamida hozir boshqa bemor
+    # yotgan bo'lsa, yangi bemorni yotqizib bo'lmaydi (bir palataga
+    # bitta bemor tamoyili).
+    occupied_by = (
+        db.query(models.Patient)
+        .filter(
+            models.Patient.room_number == admit_data.room_number,
+            models.Patient.is_admitted.is_(True),
+            models.Patient.id != patient_id,
+        )
+        .first()
+    )
+    if occupied_by is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{admit_data.room_number}-palata band ({occupied_by.fullname})",
+        )
+
+    patient.room_number = admit_data.room_number
+    patient.admitted_at = admit_data.admitted_at or datetime.datetime.utcnow()
+    patient.discharged_at = None
+    patient.is_admitted = True
+    db.commit()
+    db.refresh(patient)
+    log_action(
+        db,
+        user,
+        "patient.admit",
+        "Patient",
+        patient.id,
+        f"fullname={patient.fullname}, room_number={patient.room_number}",
+    )
+    return patient
+
+
+@router.post(
+    "/{patient_id}/discharge",
+    response_model=schemas.PatientRoomResponse,
+    dependencies=[Depends(require_role("doctor", "reception"))],
+)
+def discharge_patient(
+    patient_id: int,
+    discharge_data: schemas.PatientRoomUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.Patient:
+    """Bemorni palatadan chiqarish."""
+    patient = _get_patient_or_404(db, patient_id)
+
+    if not patient.is_admitted:
+        raise HTTPException(status_code=409, detail="Bemor hozir palatada emas")
+
+    patient.discharged_at = discharge_data.discharged_at or datetime.datetime.utcnow()
+    patient.is_admitted = False
+    db.commit()
+    db.refresh(patient)
+    log_action(
+        db,
+        user,
+        "patient.discharge",
+        "Patient",
+        patient.id,
+        f"fullname={patient.fullname}, room_number={patient.room_number}",
+    )
+    return patient
 
 
 # ── Allergiyalar (bemor sub-resursi) ────────────────────────────────

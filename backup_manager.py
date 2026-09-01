@@ -90,22 +90,40 @@ def save_settings(destinations: list) -> dict:
 
 
 def check_path(path: str) -> dict:
-    """Yo'lni tekshiradi: mavjudmi, yozish huquqi bormi. Mavjud bo'lmasa
-    yaratishga urinadi (foydalanuvchiga qulaylik uchun)."""
+    """Yo'lni FAQAT TEKSHIRADI: mavjudmi, yozish huquqi bormi.
+    Yo'q papkani hech qachon yaratmaydi — buni alohida
+    `create_path()` funksiyasi (admin so'rovi bilan) bajaradi."""
     path = (path or "").strip()
     if not path:
         return {"exists": False, "writable": False, "message": "Yo'l kiritilmagan"}
-    exists = os.path.isdir(path)
-    if not exists:
-        try:
-            os.makedirs(path, exist_ok=True)
-            exists = True
-        except Exception as e:
-            return {"exists": False, "writable": False,
-                     "message": f"Papka topilmadi va yaratib bo'lmadi: {e}"}
+    if not os.path.isdir(path):
+        return {"exists": False, "writable": False,
+                 "message": "Papka mavjud emas. Iltimos, avval papka yaratib, keyin tekshiring."}
     writable = os.access(path, os.W_OK)
     return {"exists": True, "writable": writable,
             "message": "Yo'l topildi, yozish mumkin" if writable else "Yo'l mavjud, lekin yozish huquqi yo'q"}
+
+
+def create_path(path: str) -> dict:
+    """Yo'q papkani (va kerak bo'lsa ota-papkalarni) yaratadi. Faqat
+    admin so'rovi bilan, foydalanuvchi ongli ravishda tasdiqlaganda
+    chaqiriladi — check_path() bunga hech qachon o'zi murojaat qilmaydi."""
+    path = (path or "").strip()
+    if not path:
+        return {"exists": False, "writable": False, "message": "Yo'l kiritilmagan"}
+    if os.path.isdir(path):
+        writable = os.access(path, os.W_OK)
+        return {"exists": True, "writable": writable,
+                "message": "Papka allaqachon mavjud edi."}
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception as e:
+        return {"exists": False, "writable": False,
+                 "message": f"Papkani yaratib bo'lmadi: {e}"}
+    writable = os.access(path, os.W_OK)
+    return {"exists": True, "writable": writable,
+            "message": "Papka muvaffaqiyatli yaratildi." if writable else
+                       "Papka yaratildi, lekin yozish huquqi yo'q."}
 
 
 # ==============================================

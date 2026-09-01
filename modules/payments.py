@@ -8,6 +8,12 @@ Also adds "Bekor qilish / qaytarish" (refund) — audit point #8 — as an
 is_refund=True audit row rather than deleting the original payment, so
 the money trail stays intact.
 
+Prompt 6: ikki bosqichli qaytarim. Admin `POST /{id}/cancel` orqali
+to'lovni "cancelled" (= qaytarish kutilmoqda) qiladi, lekin pul
+qaytarmaydi. Kassir `POST /{id}/refund` orqali (sabab majburiy) haqiqiy
+pulni qaytaradi va status "refunded"ga o'tadi. Boshqa rollar (shu
+jumladan admin — refund bosqichida) bu amallarni bajara olmaydi.
+
 v3.1 fixes (post-launch review):
   - refund_of_payment_id is now a real FK (models.Payment) instead of
     matching on the free-text `note` string. The old approach could
@@ -19,6 +25,7 @@ v3.1 fixes (post-launch review):
     while owing money — silently violating the very invariant the
     state machine (modules/appointments.py) is supposed to guarantee.
 """
+from datetime import datetime
 from typing import Dict, List, Set
 import csv
 import io
@@ -67,6 +74,12 @@ def _to_list_item(payment: models.Payment, refunded_ids: Set[int]) -> schemas.Pa
         note=payment.note,
         is_refund=payment.is_refund,
         refund_of_payment_id=payment.refund_of_payment_id,
+        status=payment.status,
+        cancelled_by_id=payment.cancelled_by_id,
+        cancelled_at=payment.cancelled_at,
+        refunded_by_id=payment.refunded_by_id,
+        refunded_at=payment.refunded_at,
+        refund_reason=payment.refund_reason,
         is_refunded=payment.id in refunded_ids,
         created_at=payment.created_at,
     )
@@ -189,7 +202,10 @@ def export_payments_csv(db: Session = Depends(get_db)) -> StreamingResponse:
             p.patient.fullname if p.patient else "Noma'lum",
             p.appointment_id,
             p.amount,
-            "Qaytarim" if p.is_refund else ("Qaytarilgan" if p.id in refunded_ids else "To'lov"),
+            "Qaytarim" if p.is_refund else (
+                "Bekor qilingan (kutilmoqda)" if p.status == "cancelled"
+                else ("Qaytarilgan" if p.status == "refunded" else "To'lov")
+            ),
             p.note or "",
         ])
     buffer.seek(0)
@@ -201,25 +217,82 @@ def export_payments_csv(db: Session = Depends(get_db)) -> StreamingResponse:
 
 
 # ── Dynamic path parameter routes ───────────────────────────────────
-@router.patch(
-    "/{payment_id}/refund",
+@router.post(
+    "/{payment_id}/cancel",
     response_model=schemas.PaymentRead,
-    dependencies=[Depends(require_role("admin", "cashier"))],
+    dependencies=[Depends(require_role("admin"))],
 )
-def refund_payment(
+def cancel_payment(
     payment_id: int = Path(..., ge=1, le=2147483647),
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ) -> models.Payment:
+    """Prompt 6, 1-bosqich: ADMIN to'lovni "cancelled"ga o'tkazadi — bu
+    "qaytarish kutilmoqda" (pending refund) degani: sistemada belgilanadi,
+    lekin pul HALI QAYTARILMAYDI. Haqiqiy pulni faqat kassir /refund
+    orqali qaytaradi (pastda)."""
     payment = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
     if payment is None:
         raise HTTPException(status_code=404, detail="To'lov topilmadi")
     if payment.is_refund:
-        raise HTTPException(status_code=409, detail="Bu yozuv allaqachon qaytarim")
+        raise HTTPException(status_code=409, detail="Qaytarim yozuvini bekor qilib bo'lmaydi")
+    if payment.status != "completed":
+        raise HTTPException(status_code=409, detail=f"Bu to'lov allaqachon '{payment.status}' holatida")
 
-    # FK bo'yicha tekshirish — eski versiyada bu `note` matni bo'yicha
-    # solishtirilardi, ya'ni kassir yozgan erkin matn tasodifan mos kelib
-    # qolsa, tekshiruv noto'g'ri natija berishi mumkin edi.
+    payment.status = "cancelled"
+    payment.cancelled_by_id = user.id
+    payment.cancelled_at = datetime.utcnow()
+    db.commit()
+    db.refresh(payment)
+    log_action(
+        db, user, "payment.cancel", "Payment", payment.id,
+        f"amount={payment.amount}, patient_id={payment.patient_id} — qaytarish kutilmoqda",
+    )
+    return payment
+
+
+@router.get(
+    "/pending-refunds",
+    response_model=List[schemas.PaymentListItem],
+    dependencies=[Depends(require_role("admin", "cashier"))],
+)
+def list_pending_refunds(db: Session = Depends(get_db)) -> List[schemas.PaymentListItem]:
+    """Kassir (va admin) uchun: admin tomonidan bekor qilingan, hali pul
+    qaytarilmagan to'lovlar ro'yxati."""
+    payments = (
+        db.query(models.Payment)
+        .options(joinedload(models.Payment.patient))
+        .filter(models.Payment.status == "cancelled")
+        .order_by(models.Payment.cancelled_at.desc())
+        .all()
+    )
+    return [_to_list_item(p, set()) for p in payments]
+
+
+@router.post(
+    "/{payment_id}/refund",
+    response_model=schemas.PaymentRead,
+    dependencies=[Depends(require_role("cashier"))],
+)
+def refund_payment(
+    refund_data: schemas.PaymentRefundRequest,
+    payment_id: int = Path(..., ge=1, le=2147483647),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.Payment:
+    """Prompt 6, 2-bosqich: faqat KASSIR — va faqat admin allaqachon
+    "cancelled" deb belgilagan to'lovlar uchun — haqiqiy pulni qaytaradi.
+    Sabab (reason) majburiy (schemas.PaymentRefundRequest validatsiya
+    qiladi, bo'sh bo'lsa 422 qaytadi)."""
+    payment = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+    if payment is None:
+        raise HTTPException(status_code=404, detail="To'lov topilmadi")
+    if payment.status != "cancelled":
+        raise HTTPException(
+            status_code=409,
+            detail="Bu to'lov avval admin tomonidan bekor qilinishi kerak (pending refund emas)",
+        )
+
     already_refunded = (
         db.query(models.Payment)
         .filter(models.Payment.refund_of_payment_id == payment.id)
@@ -232,12 +305,18 @@ def refund_payment(
         patient_id=payment.patient_id,
         appointment_id=payment.appointment_id,
         amount=payment.amount,
-        note=f"Qaytarim: to'lov #{payment.id}",
+        note=f"Qaytarim: to'lov #{payment.id} — {refund_data.reason}",
         is_refund=True,
         refund_of_payment_id=payment.id,
+        status="completed",
     )
     db.add(refund)
     db.flush()  # appointment.debt pastda to'g'ri hisoblanishi uchun
+
+    payment.status = "refunded"
+    payment.refunded_by_id = user.id
+    payment.refunded_at = datetime.utcnow()
+    payment.refund_reason = refund_data.reason
 
     # 🩹 Bug fix: agar shu to'lov "tugadi" deb belgilangan qabulga tegishli
     # bo'lsa va qaytarim natijasida qarz paydo bo'lsa — qabul "completed"
@@ -256,7 +335,7 @@ def refund_payment(
     db.refresh(refund)
     log_action(
         db, user, "payment.refund", "Payment", refund.id,
-        f"original_payment_id={payment.id}, amount={refund.amount}",
+        f"original_payment_id={payment.id}, amount={refund.amount}, reason={refund_data.reason}",
     )
     return refund
 

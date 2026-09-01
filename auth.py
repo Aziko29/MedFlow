@@ -49,7 +49,26 @@ SESSION_COOKIE_NAME = "cf_session"
 # tashlaydi, get_current_user_optional esa None qaytarib GUI sahifalarni
 # /login'ga yo'naltiradi (main.py) — API ham, brauzer sahifalari ham
 # qayta login talab qiladi.
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 soat (bitta ish kuni)
+#
+# ⬅️ YANGI (15.3-band, production sozlash): standart 8 soat endi
+# `SESSION_EXPIRE_MINUTES` environment o'zgaruvchisi orqali klinikaga
+# qarab o'zgartirilishi mumkin (masalan tungi smenali klinika uchun
+# uzunroq, umumiy kompyuterli qabulxona uchun qisqaroq). O'rnatilmasa —
+# xatti-harakat OLDINGIDEK, aynan 8 soat (hech narsa o'zgarmaydi).
+_session_expire_minutes_raw = os.environ.get("SESSION_EXPIRE_MINUTES", "").strip()
+if _session_expire_minutes_raw:
+    try:
+        SESSION_MAX_AGE_SECONDS = int(_session_expire_minutes_raw) * 60
+        if SESSION_MAX_AGE_SECONDS <= 0:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError(
+            "SESSION_EXPIRE_MINUTES noto'g'ri qiymatga ega "
+            f"({_session_expire_minutes_raw!r}) — musbat butun son bo'lishi kerak "
+            "(masalan 480 = 8 soat)."
+        )
+else:
+    SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 soat (bitta ish kuni) — standart
 
 # ==============================================
 # PAROL XESHLASH — ARGON2ID
@@ -448,11 +467,41 @@ def require_patient(
 
 
 def require_role(*allowed_roles: str) -> Callable[[models.User], models.User]:
+    """Umumiy rol-tekshiruv dependency'si — istalgan rol nomini (jumladan
+    yangi 'assistant_admin' va 'lab_doctor'ni ham) qabul qiladi, chunki
+    ruxsat etilgan rollar chaqiruvchi tomondan (modules/*.py, main.py)
+    aniq ro'yxat sifatida uzatiladi, kod ichida qattiq belgilanmagan."""
     def _dependency(user: models.User = Depends(get_current_user)) -> models.User:
         if user.role not in allowed_roles:
+            # Prompt 14.1: 404 emas — aniq 403 Forbidden, standart xabar bilan
+            # (xatolik matni orqali resurs mavjudligi/yo'qligi haqida ma'lumot
+            # tarqalmasligi uchun har doim BIR XIL, umumiy xabar qaytariladi;
+            # qaysi rol kerakligi faqat serverdagi loglarga yoziladi).
+            logger.info(
+                "RBAC: '%s' (rol=%s) ruxsatsiz bo'limga kirishga urindi (kerakli rol: %s)",
+                user.username, user.role, ", ".join(allowed_roles),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Ruxsat yo'q (kerakli rol: {', '.join(allowed_roles)})",
+                detail="Sizda bu bo'limga kirish huquqi yo'q",
             )
         return user
     return _dependency
+
+
+def require_admin_or_assistant() -> Callable[[models.User], models.User]:
+    """⬅️ YANGI: admin + assistant_admin uchun qisqa yordamchi — 'Barcha
+    hisobotlarni ko'rish', 'Xodimlarni ko'rish/qo'shish' va 'Xavfsizlik
+    monitoringini ko'rish' kabi ikkala rolga ham tegishli, FAQAT O'QISH
+    xarakteridagi bo'limlarda require_role("admin", "assistant_admin")
+    o'rniga ishlatiladi. Yozuv (create/update/delete) amallari bunga
+    tayanmaydi — ular alohida require_role("admin") bilan cheklanadi."""
+    return require_role("admin", "assistant_admin")
+
+
+def require_lab_doctor_or_staff() -> Callable[[models.User], models.User]:
+    """⬅️ YANGI: laboratoriya natijalarini kiritish/ko'rish huquqiga ega
+    rollar uchun yordamchi (admin, doctor, reception, lab_doctor).
+    'cashier' va boshqa rollar bu yerga kirmaydi — Lab-Results moduli
+    ularga 403 qaytaradi (qarang: modules/lab_results.py)."""
+    return require_role("admin", "doctor", "reception", "lab_doctor")

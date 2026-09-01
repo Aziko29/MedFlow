@@ -38,6 +38,7 @@ from auth import (
     hash_password,
     needs_rehash,
     require_role,
+    require_admin_or_assistant,
     verify_password,
 )
 from database import get_db
@@ -51,6 +52,7 @@ from database import get_db
 # (batafsil: rate_limiter.py'dagi izohga qarang).
 from rate_limiter import limiter
 from models import SELF_PASSWORD_CHANGE_LIMIT
+from modules.security_center import record_login_attempt
 
 # ⬅️ YANGI (2-band, 2.3): production'da cookie faqat HTTPS orqali
 # yuborilishi (`secure=True`) uchun.
@@ -96,7 +98,11 @@ def login(
        (qarang: auth.py, needs_rehash())
     """
     start_time = time.time()
-    
+    # 🛡️ Prompt 9: har bir urinish (muvaffaqiyatli/yo'q) LoginLog'ga
+    # yoziladi — ketma-ket 3 marta muvaffaqiyatsiz bo'lsa admin
+    # avtomatik xabar oladi (qarang: modules/security_center.py).
+    client_ip = request.client.host if request.client else None
+
     # 1️⃣ Cache'dan qidirish (tez) — auth.py bilan bitta umumiy kesh
     cached_user = get_user_cached(credentials.username)
     
@@ -104,6 +110,7 @@ def login(
         # Cache'dan topildi - tez tekshirish
         if not verify_password(credentials.password, cached_user["password_hash"]):
             logger.warning(f"❌ Login failed (cache) - invalid password: {credentials.username}")
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
         
         # User ni bazadan olish (cache da to'liq ma'lumot yo'q)
@@ -111,8 +118,10 @@ def login(
         if not user:
             # Cache eskirgan - yangilash
             clear_user_cache(credentials.username)
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Foydalanuvchi topilmadi")
-        
+
+        record_login_attempt(db, credentials.username, success=True, ip_address=client_ip, user=user)
         logger.info(f"✅ Login success (cache): {user.username} in {time.time() - start_time:.3f}s")
         
     else:
@@ -124,15 +133,18 @@ def login(
         # User mavjudligini tekshirish
         if user is None:
             logger.warning(f"❌ Login failed - user not found: {credentials.username}")
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
         
         # Parolni tekshirish
         if not verify_password(credentials.password, user.password_hash):
             logger.warning(f"❌ Login failed - invalid password: {credentials.username}")
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip, user=user)
             raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
         
         # Cache'ga qo'shish
         get_user_cached(credentials.username)
+        record_login_attempt(db, credentials.username, success=True, ip_address=client_ip, user=user)
         logger.info(f"✅ Login success (db): {user.username} in {time.time() - start_time:.3f}s")
 
     # 2.5️⃣ Argon2 migratsiyasi: agar xesh hali eski PBKDF2 formatida bo'lsa
@@ -151,7 +163,14 @@ def login(
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        max_age=SESSION_MAX_AGE_SECONDS,
+        # ⬅️ TUZATILDI (session-cookie xavfsizligi): max_age atayin
+        # o'rnatilmagan (None) — bu cookie'ni brauzer "session cookie"ga
+        # aylantiradi: brauzer/kompyuter yopilib qayta ochilganda cookie
+        # avtomatik o'chadi va foydalanuvchi qayta login qilishi shart
+        # bo'ladi. 8 soatlik muddat baribir bekor qilinmagan — u
+        # server tomonda (auth.py, issued_at tekshiruvi orqali)
+        # SESSION_MAX_AGE_SECONDS bilan alohida amalga oshiriladi.
+        max_age=None,
         httponly=True,
         samesite="lax",
         # ⬅️ TUZATILDI (2-band, 2.3): production'da (ENV=production) faqat
@@ -182,7 +201,17 @@ def logout(
     ✅ Cookie'ni o'chiradi va audit log qo'shadi
     """
     logger.info(f"🔓 User logged out: {user.username}")
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    # ⬅️ TUZATILDI (session-cookie xavfsizligi, 15.2-band): ba'zi brauzerlar
+    # (Chrome/Safari'ning yangi versiyalari) cookie'ni faqat set_cookie()'da
+    # ishlatilgan bilan BIR XIL path/samesite/secure/httponly kombinatsiyasi
+    # bilan chaqirilgan delete_cookie() orqaligina ishonchli o'chiradi;
+    # aks holda eski cookie ba'zan brauzerda "osilib qolishi" mumkin.
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        httponly=True,
+        samesite="lax",
+        secure=IS_PRODUCTION,
+    )
     return {"status": "ok", "message": "Tizimdan chiqildi"}
 
 # ==============================================
@@ -336,7 +365,7 @@ def change_password(
 @router.get(
     "/users",
     response_model=list[schemas.CurrentUser],
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_admin_or_assistant())],
 )
 def list_users(db: Session = Depends(get_db)) -> list[models.User]:
     return db.query(models.User).order_by(models.User.id).all()
@@ -363,8 +392,11 @@ def _count_admins(db: Session, exclude_user_id: Optional[int] = None) -> int:
 def _validate_doctor_link(
     db: Session, role: str, doctor_id: Optional[int], exclude_user_id: Optional[int] = None
 ) -> Optional[int]:
-    """role='doctor' bo'lsa doctor_id majburiy va mavjud Doctor'ga ishora
-    qilishi shart; boshqa rollarda doctor_id hech qachon saqlanmaydi.
+    """role='doctor' YOKI 'lab_doctor' bo'lsa doctor_id majburiy va mavjud
+    Doctor'ga ishora qilishi shart; boshqa rollarda doctor_id hech qachon
+    saqlanmaydi. lab_doctor uchun ham xuddi shu bog'lanish ishlatiladi —
+    shu orqali "o'ziga biriktirilgan bemorlar" (LabResult.doctor_id)
+    aniqlanadi (qarang: modules/patients.py list_patients).
 
     Bundan tashqari: bitta Doctor yozuviga faqat BITTA User (login)
     bog'lanishi mumkin (models.Doctor.user_account — uselist=False,
@@ -373,11 +405,12 @@ def _validate_doctor_link(
     etiladi — aks holda ikkita login bitta shifokorning navbatini
     "o'zimniki" deb ko'rsatishi mumkin edi.
     """
-    if role != "doctor":
+    if role not in ("doctor", "lab_doctor"):
         return None
     if doctor_id is None:
         raise HTTPException(
-            status_code=400, detail="Rol 'doctor' bo'lsa, bog'langan shifokor tanlanishi shart"
+            status_code=400,
+            detail="Rol 'doctor' yoki 'lab_doctor' bo'lsa, bog'langan shifokor tanlanishi shart",
         )
     doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
     if doctor is None:
@@ -399,7 +432,10 @@ def _validate_doctor_link(
     "/users",
     response_model=schemas.UserCreateResponse,
     status_code=201,
-    dependencies=[Depends(require_role("admin"))],
+    # ⬅️ YANGI: assistant_admin ham xodim QO'SHISHI mumkin ("faqat ko'rish
+    # va qo'shish, o'chirish yo'q" — talab #4). Tahrirlash (PUT) va
+    # o'chirish (DELETE) hamon FAQAT admin uchun (pastda o'zgarmagan).
+    dependencies=[Depends(require_role("admin", "assistant_admin"))],
 )
 def create_user(
     payload: schemas.UserCreate,
@@ -409,6 +445,15 @@ def create_user(
     existing = db.query(models.User).filter(models.User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=409, detail="Bu login allaqachon band")
+
+    # 🔐 Imtiyozni oshirishning oldini olish: assistant_admin o'zidan
+    # yuqori/teng imtiyozli 'admin' yoki boshqa 'assistant_admin' rolini
+    # yaratolmaydi — faqat admin buni qila oladi.
+    if admin.role == "assistant_admin" and payload.role in ("admin", "assistant_admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Yordamchi admin 'admin' yoki 'assistant_admin' rolidagi xodim qo'sha olmaydi",
+        )
 
     doctor_id = _validate_doctor_link(db, payload.role, payload.doctor_id)
 

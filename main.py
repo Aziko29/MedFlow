@@ -14,6 +14,7 @@ import importlib
 import os
 import logging
 import time
+import traceback as traceback_module
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
@@ -21,6 +22,8 @@ from typing import Any, Dict, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -38,13 +41,15 @@ from audit import log_action
 from rate_limiter import limiter
 from database import engine as db_engine
 from database import get_db
+from database import SessionLocal as SessionLocalForErrorLookup
 from eskiz_client import sms_enabled
 from modules.appointments import list_appointments
-from modules.dashboard import get_dashboard_summary, get_live_queue
+from modules.dashboard import get_dashboard_summary, get_dashboard_summary_by_role, get_live_queue
 from modules.doctors import list_doctors
 from modules.patients import compute_financials, list_patients
 from modules.payments import list_payments
 from modules.lab_results import _parse_result_data
+from modules.security_center import record_system_error_isolated, record_unauthorized_access
 from modules.reports import (
     get_cancel_reasons,
     get_doctor_performance,
@@ -141,11 +146,18 @@ async def lifespan(app: FastAPI):
         backup_manager.stop_backup_scheduler()
 
 
+# Productionda API sxemasini (barcha endpoint/parametr nomlari) ochiq
+# qoldirmaslik uchun /docs, /redoc, /openapi.json faqat development'da yoqiq.
+_IS_PRODUCTION = os.environ.get("ENV") == "production"
+
 app = FastAPI(
     title="ClinicFlow Core Engine",
     version="3.0.0",
     description="Optimallashtirilgan klinika boshqaruv tizimi",
     lifespan=lifespan,
+    docs_url=None if _IS_PRODUCTION else "/docs",
+    redoc_url=None if _IS_PRODUCTION else "/redoc",
+    openapi_url=None if _IS_PRODUCTION else "/openapi.json",
 )
 
 # ==============================================
@@ -175,10 +187,10 @@ async def add_security_headers(request: Request, call_next):
     # 4. Content Security Policy (CSP)
     csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
         "img-src 'self' data:; "
-        "font-src 'self' https://cdnjs.cloudflare.com data:; "
+        "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
@@ -341,10 +353,12 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    
-    summary = get_dashboard_summary(db)
-    queue = get_live_queue(db)
-    
+
+    # Prompt 4: har bir rol faqat o'ziga tegishli ko'rsatkichlarni ko'radi
+    # (modules/dashboard.py -> get_dashboard_summary_by_role / get_live_queue).
+    summary = get_dashboard_summary_by_role(db, user)
+    queue = get_live_queue(db, user)
+
     elapsed = (time.time() - start_time) * 1000
     logger.info(f"📊 Dashboard loaded in {elapsed:.2f}ms for user: {user.username}")
     
@@ -377,6 +391,7 @@ def patients_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
+    _require_module(user, "patients")
 
     # 🔐 Allergiya/surunkali kasallik bo'yicha filtr tibbiy ma'lumot —
     # cashier uchun sahifada input umuman ko'rinmaydi (patients.html), lekin
@@ -420,10 +435,28 @@ def patient_detail_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    
+    _require_module(user, "patients")
+
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if patient is None:
         raise HTTPException(status_code=404, detail="Bemor topilmadi")
+
+    # ⬅️ YANGI: lab_doctor faqat O'ZIGA biriktirilgan bemorning sahifasini
+    # ochishi mumkin — patients.html ro'yxatida ko'rinmasa ham, to'g'ridan
+    # -to'g'ri /patients/{id} URL orqali boshqa lab shifokorining
+    # bemorini ko'rish mumkin bo'lmasligi kerak.
+    if user.role == "lab_doctor":
+        has_access = (
+            db.query(models.LabResult)
+            .filter(
+                models.LabResult.patient_id == patient_id,
+                models.LabResult.doctor_id == user.doctor_id,
+            )
+            .first()
+            is not None
+        )
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Bu bemor sizga biriktirilmagan")
     
     financials = compute_financials(db, patient_id)
     appointments = (
@@ -493,21 +526,24 @@ def patient_detail_page(
     # — /lab-results/ sahifasidagi bilan bir xil ko'rinishda (parsed
     # ko'rsatkichlar yoki eski erkin-matn), shunda ma'lumot ikkala joyda
     # ham SINXRON ko'rinadi (bitta yozuv, ikkita ko'rinish).
-    lab_results = (
-        db.query(models.LabResult)
-        .filter(models.LabResult.patient_id == patient_id)
-        .order_by(models.LabResult.created_at.desc())
-        .all()
-    )
+    # Prompt 5: faqat admin/doctor/lab_doctor ko'radi — cashier/reception/
+    # assistant_admin uchun bemor sahifasida ham lab natijalari yashirin.
     lab_rows = []
-    for r in lab_results:
-        parsed = _parse_result_data(r.result_data)
-        lab_rows.append({
-            "obj": r,
-            "parsed": parsed,
-            "abnormal_count": parsed.get("abnormal_count", 0) if parsed else None,
-            "raw_text": None if parsed else r.result_data,
-        })
+    if user.role in ("admin", "doctor", "lab_doctor"):
+        lab_results = (
+            db.query(models.LabResult)
+            .filter(models.LabResult.patient_id == patient_id)
+            .order_by(models.LabResult.created_at.desc())
+            .all()
+        )
+        for r in lab_results:
+            parsed = _parse_result_data(r.result_data)
+            lab_rows.append({
+                "obj": r,
+                "parsed": parsed,
+                "abnormal_count": parsed.get("abnormal_count", 0) if parsed else None,
+                "raw_text": None if parsed else r.result_data,
+            })
 
     return templates.TemplateResponse(
         request=request,
@@ -546,6 +582,7 @@ def doctors_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
+    _require_module(user, "doctors")
     
     doctors = list_doctors(db)
     
@@ -570,6 +607,7 @@ def doctor_detail_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
+    _require_module(user, "doctors")
     
     doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
     if doctor is None:
@@ -600,9 +638,10 @@ def appointments_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
+    _require_module(user, "appointments")
     
     appointments = list_appointments(db)
-    patients = list_patients(db)
+    patients = list_patients(db, user)
     doctors = list_doctors(db)
     
     open_appointments = _open_appointments_for_select(
@@ -638,9 +677,7 @@ def payments_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    
-    if user.role == "doctor":
-        raise HTTPException(status_code=403, detail="Bu bo'lim shifokorlar uchun mavjud emas")
+    _require_module(user, "payments")
     
     payments = list_payments(db)
     raw_open = db.query(models.Appointment).filter(models.Appointment.status != "cancelled").all()
@@ -660,7 +697,7 @@ def reports_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    if user.role != "admin":
+    if "reports" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         return RedirectResponse(url="/dashboard")
 
     date_from = request.query_params.get("date_from")
@@ -732,21 +769,63 @@ def _quick_links_for_role(role: str) -> list[dict]:
         {"key": "backup", "href": "/admin/backup", "icon": "fa-database", "label": "Zaxira nusxa",
          "desc": "Bazani avtomatik/qo'lda zaxiralash (admin)"},
     ]
-    # Rolga ko'ra qaysi bo'limlar shu xodimga tegishli/ko'rinadigan —
-    # base.html sidebar'idagi ko'rinish mantig'i bilan bir xil (7- va
-    # 9-izohlarga qarang: shifokorda to'lov yo'q, admin-only bo'limlar
-    # faqat admin uchun).
-    visible_by_role = {
-        "admin": {"dashboard", "patients", "appointments", "doctors", "lab_results",
-                  "payments", "reports", "users", "audit_log", "backup"},
-        "reception": {"dashboard", "patients", "appointments", "doctors", "lab_results",
-                      "payments"},
-        "cashier": {"dashboard", "patients", "appointments", "doctors", "lab_results",
-                    "payments"},
-        "doctor": {"dashboard", "patients", "appointments", "doctors", "lab_results"},
-    }
-    allowed = visible_by_role.get(role, {"dashboard"})
+    allowed = ROLE_MODULE_ACCESS.get(role, {"dashboard"})
     return [link for link in all_links if link["key"] in allowed]
+
+
+# ==============================================
+# 🔐 ROL → MODUL RUXSATLARI (yagona manba)
+#
+# Bu lug'at IKKI joyda ishlatiladi: (1) yuqoridagi _quick_links_for_role
+# va sidebar (base.html) uchun — qaysi havolalar KO'RINADI; (2) pastdagi
+# _require_module (va har bir sahifa route'i) uchun — qaysi sahifaga
+# to'g'ridan-to'g'ri URL orqali kirish ham RUXSAT ETILADI. Ikkalasi bitta
+# manbadan olingani uchun "sidebar'da yashirilgan, lekin URL orqali ochiq"
+# nomuvofiqligi bo'lmaydi.
+#
+# Yozish (create/update/delete) huquqlari BU YERDA emas — ular har bir
+# modulning o'zida require_role(...) bilan alohida-alohida cheklanadi
+# (masalan modules/patients.py: add/edit/delete faqat admin+reception).
+# Shu lug'at faqat "ko'rish/sahifaga kirish" darajasini bildiradi.
+#
+#   assistant_admin — hisobotlar, xodimlar (ko'rish+qo'shish), bemorlar
+#                      (ko'rish), navbatlar (ko'rish), dashboard,
+#                      xavfsizlik monitoringi (audit_log) — barchasi
+#                      FAQAT O'QISH uchun.
+#   lab_doctor      — faqat dashboard (o'ziga xos), bemorlar (faqat
+#                      biriktirilganlar) va lab-results (kiritish+ko'rish).
+#                      Boshqa modullarga (appointments/doctors/payments/
+#                      reports/users/audit_log/backup) kira olmaydi.
+#   cashier, reception, assistant_admin — talab bo'yicha lab-results'ga
+#                      UMUMAN KIRA OLMAYDI (avval reception/cashier
+#                      sidebar'da ko'rinardi, endi olib tashlandi).
+# ==============================================
+ROLE_MODULE_ACCESS = {
+    "admin": {"dashboard", "patients", "appointments", "doctors", "lab_results",
+              "payments", "reports", "users", "audit_log", "backup", "admin_profile",
+              "security"},
+    "reception": {"dashboard", "patients", "appointments", "doctors",
+                  "payments"},
+    "cashier": {"dashboard", "patients", "appointments", "doctors", "payments"},
+    "doctor": {"dashboard", "patients", "appointments", "doctors", "lab_results"},
+    # ⬅️ YANGI (Prompt 9): "security" — xavfsizlik markazi (shifokor
+    # xabarlari, tizim xatoliklari, kirish loglari) sahifasiga kirish.
+    # assistant_admin bu yerda ham FAQAT O'QISH huquqiga ega (yozish
+    # amallari — o'qilgan deb belgilash/o'chirish — faqat admin uchun
+    # modules/security_center.py'da alohida require_role("admin") bilan
+    # cheklangan, ROLE_MODULE_ACCESS faqat sahifaga kirishni bildiradi).
+    "assistant_admin": {"dashboard", "patients", "appointments", "reports",
+                         "users", "audit_log", "admin_profile", "security"},
+    "lab_doctor": {"dashboard", "patients", "lab_results"},
+}
+
+
+def _require_module(user: models.User, module_key: str) -> None:
+    """Sahifa darajasidagi ruxsat tekshiruvi — ROLE_MODULE_ACCESS'ga
+    tayanadi. Ruxsat yo'q bo'lsa 403 qaytaradi (link yashirilgan bo'lsa
+    ham, to'g'ridan-to'g'ri URL orqali chetlab o'tib bo'lmasligi uchun)."""
+    if module_key not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
+        raise HTTPException(status_code=403, detail="Bu bo'limga kirish huquqingiz yo'q")
 
 
 @app.get("/profile", response_class=HTMLResponse)
@@ -758,15 +837,19 @@ def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     changes_used = user.self_password_change_count
     changes_remaining = max(SELF_PASSWORD_CHANGE_LIMIT - changes_used, 0)
 
-    # FAZA 3 (SKELETON): faqat admin uchun statik "Tez orada" kartasi.
-    # Bu yerda hech qanday tashqi so'rov yo'q — faqat bazadagi bitta
-    # sozlamalar qatorini o'qib, hozircha doim False bo'lgan holatni
-    # aniqlaymiz.
+    # Prompt 10: haqiqiy holat — bazadagi gov_integration_settings
+    # qatorini o'qib, joriy yoqilgan/o'chirilgan holatni va integratsiya
+    # nomini ko'rsatamiz. Sozlamalarning o'zi (yoqish/o'chirish, API
+    # kalitlari) faqat /api/admin/gov-integration/settings orqali
+    # (modules/gov_integration.py) o'zgartiriladi — bu yerda faqat
+    # o'qish uchun.
     gov_integration_enabled = False
+    gov_integration_name = None
     if user.role == "admin":
         gov_settings = db.query(models.GovIntegrationSettings).first()
         if gov_settings is not None:
             gov_integration_enabled = gov_settings.is_enabled
+            gov_integration_name = gov_settings.integration_name
 
     return templates.TemplateResponse(
         request=request,
@@ -780,6 +863,7 @@ def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
                 "changes_remaining": changes_remaining,
                 "limit_reached": changes_remaining == 0,
                 "gov_integration_enabled": gov_integration_enabled,
+                "gov_integration_name": gov_integration_name,
             },
         ),
     )
@@ -799,10 +883,82 @@ async def root() -> RedirectResponse:
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception(f"Kutilmagan xato: {request.method} {request.url}")
+    # 🛡️ Prompt 9: har qanday 500 xatolik avtomatik SystemError jadvaliga
+    # yoziladi. Alohida ("isolated") SessionLocal ishlatiladi — bu handler
+    # aynan so'rovning o'z DB seansi buzuq/rollback holatda bo'lishi
+    # mumkin bo'lgan paytda ishlaydi, shuning uchun Depends(get_db)ga
+    # tayanib bo'lmaydi.
+    cf_user = None
+    try:
+        isolated_db = SessionLocalForErrorLookup()
+        try:
+            cf_user = get_current_user_optional(request.cookies.get("cf_session"), isolated_db)
+        finally:
+            isolated_db.close()
+    except Exception:
+        cf_user = None
+    record_system_error_isolated(
+        endpoint=f"{request.method} {request.url.path}",
+        error_message=str(exc) or exc.__class__.__name__,
+        traceback_str=traceback_module.format_exc(),
+        user_id=cf_user.id if cf_user else None,
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Server xatosi yuz berdi. Administratorga murojaat qiling."},
     )
+
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_with_security_logging(request: Request, exc: FastAPIHTTPException) -> JSONResponse:
+    """🛡️ Prompt 9: 403 ("ruxsat yo'q" — autentifikatsiya qilingan
+    foydalanuvchi o'ziga tegishli bo'lmagan rol/resursga urinishi)
+    javoblari SystemError'ga "ruxsatsiz kirish urinishi" sifatida
+    yoziladi. 401 (sessiya yo'q/muddati tugagan) ATAYLAB bu yerga
+    KIRMAYDI — u odatiy holat (login sahifasiga oddiy tashrif, sessiya
+    tabiiy tugashi) va login endpointidagi muvaffaqiyatsiz urinishlar
+    allaqachon o'zining maxsus, buning uchun mo'ljallangan jadvalida —
+    LoginLog'da — record_login_attempt() orqali qayd etiladi (qarang:
+    modules/auth_module.py), shuning uchun bu yerda ikki marta
+    yozilmaydi. Javobning o'zi FastAPI'ning standart HTTPException
+    handleri orqali o'zgarishsiz qaytariladi (status_code/detail bir
+    xil qoladi)."""
+    if exc.status_code == 403:
+        cf_user = None
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                cf_user = get_current_user_optional(request.cookies.get("cf_session"), db)
+                record_unauthorized_access(
+                    db,
+                    endpoint=f"{request.method} {request.url.path}",
+                    detail=str(exc.detail),
+                    status_code=exc.status_code,
+                    user=cf_user,
+                )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("401/403 xatoligini SystemError'ga yozib bo'lmadi")
+
+        # 🛡️ Prompt 14.1: xunuk JSON o'rniga — FAQAT UI (brauzer) so'rovlari
+        # uchun chiroyli 403 sahifa. API/AJAX chaqiruvlar (JSON kutayotgan
+        # yoki /api/ prefiksli) hamon standart JSON javobini olishda davom
+        # etadi — frontend JS xato-ishlovchilari buzilmasligi uchun.
+        accept = request.headers.get("accept", "")
+        is_ui_request = (
+            request.method == "GET"
+            and "text/html" in accept
+            and not request.url.path.startswith("/api/")
+        )
+        if is_ui_request and cf_user is not None:
+            return templates.TemplateResponse(
+                "errors/403.html",
+                {"request": request, "current_user": cf_user, "active_page": None},
+                status_code=403,
+            )
+    return await default_http_exception_handler(request, exc)
 
 # ==============================================
 # ✅ HEALTH CHECK
@@ -870,7 +1026,10 @@ def audit_log_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    if user.role != "admin":
+    # ⬅️ YANGI: assistant_admin "xavfsizlik monitoringi"ni (audit jurnal)
+    # FAQAT O'QISH tarzida ko'ra oladi — sahifada hech qanday yozuv
+    # (create/update/delete) amali yo'q, shuning uchun bu xavfsiz.
+    if "audit_log" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
 
     page = max(page, 1)
@@ -946,7 +1105,35 @@ def backup_check_path(
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(request, db)
-    return backup_manager.check_path(payload.path)
+    result = backup_manager.check_path(payload.path)
+    # ⬅️ TUZATILDI (Prompt 15.1): avval bu yerda "yo'l topilmadi" holati ham
+    # 200 OK bilan {"exists": false, ...} sifatida qaytardi — chaqiruvchi
+    # (frontend yoki API-consumer) buni faqat body'ni tekshirib aniqlashi
+    # kerak edi. Talab aniq "400 Bad Request" deb belgilagan, shuning uchun
+    # mavjud bo'lmagan/yozib bo'lmaydigan yo'l uchun endi HTTPException(400)
+    # tashlanadi — backup_manager.check_path() o'zi 200/400'ni bilmaydi
+    # (sof funksiya bo'lib qoladi), qaror shu yerda, HTTP qatlamida qabul
+    # qilinadi.
+    if not result.get("exists"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message") or "Yo'l mavjud emas",
+        )
+    return result
+
+
+@app.post("/admin/backup/create-path")
+def backup_create_path(
+    payload: schemas.BackupPathCheck,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user = _require_admin(request, db)
+    result = backup_manager.create_path(payload.path)
+    if result.get("exists"):
+        log_action(db, user, "backup_path_create", "backup", None,
+                   f"Yaratilgan/tekshirilgan yo'l: {payload.path}")
+    return result
 
 
 @app.post("/admin/backup/run")
@@ -976,7 +1163,11 @@ def users_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    if user.role != "admin":
+    # ⬅️ YANGI: assistant_admin sahifani KO'RA oladi (talab: "xodimlarni
+    # ko'rish va qo'shish"); tahrirlash/o'chirish tugmalari baribir
+    # ishlamaydi — mos API endpointlar (PUT/DELETE) hamon admin-only
+    # (modules/auth_module.py).
+    if "users" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
 
     users = db.query(models.User).order_by(models.User.id).all()
@@ -1007,7 +1198,7 @@ def user_detail_page(
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
-    if user.role != "admin":
+    if "users" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
 
     target = db.query(models.User).filter(models.User.id == user_id).first()

@@ -7,16 +7,18 @@
 <div class="header-container">
     <div class="header-title">
         <h1>Foydalanuvchilar</h1>
-        <span>Login hisoblari va parolni tiklash — faqat admin</span>
+        <span>Login hisoblari va parolni tiklash — admin va yordamchi admin</span>
     </div>
     <div class="header-actions">
         <div class="table-search">
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="text" placeholder="Login yoki F.I.O bo'yicha qidirish..." oninput="filterTable(this, 'usersTableBody')">
         </div>
+        {% if current_user.role in ('admin', 'assistant_admin') %}
         <button class="btn-primary-action" onclick="openUserModal()">
             <i class="fa-solid fa-plus"></i> Yangi xodim
         </button>
+        {% endif %}
     </div>
 </div>
 
@@ -36,6 +38,7 @@
                 <td><span class="status-badge status-completed">{{ u.role }}</span></td>
                 <td>{{ doctors_by_id.get(u.doctor_id, '—') if u.doctor_id else '—' }}</td>
                 <td class="row-actions">
+                    {% if current_user.role == 'admin' %}
                     <button class="btn-icon-sm" title="Tahrirlash"
                         onclick='openUserEditModal({{ {"id": u.id, "username": u.username, "fullname": u.fullname, "role": u.role, "doctor_id": u.doctor_id}|tojson }})'>
                         <i class="fa-solid fa-pen"></i>
@@ -48,6 +51,9 @@
                     <button class="btn-icon-sm danger" title="O'chirish" onclick="deleteUser({{ u.id }})">
                         <i class="fa-solid fa-trash"></i>
                     </button>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">— faqat ko'rish —</span>
                     {% endif %}
                 </td>
             </tr>

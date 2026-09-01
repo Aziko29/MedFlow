@@ -120,22 +120,120 @@
 
 {% if current_user.role == 'admin' %}
 <div class="data-section">
-    <div class="section-title">Tashqi integratsiyalar</div>
+    <div class="section-title">Davlat integratsiyasi</div>
     <div class="gov-integration-card">
         <i class="fa-solid fa-landmark gic-icon"></i>
-        <div>
+        <div style="flex:1;">
             <div class="gic-title-row">
-                <h4>Davlat raqamli platformasi</h4>
-                <span class="status-badge status-completed">
-                    {% if gov_integration_enabled %}Yoqilgan{% else %}Tez orada{% endif %}
+                <h4>{{ gov_integration_name or "Davlat raqamli platformasi (OneID)" }}</h4>
+                <span class="status-badge {{ 'status-completed' if gov_integration_enabled else 'status-pending' }}" id="govStatusBadge">
+                    {% if gov_integration_enabled %}Yoqilgan{% else %}O'chirilgan (mock rejim){% endif %}
                 </span>
             </div>
             <p class="gic-desc">
-                OneID va Raqamli sog'liqni saqlash platformasiga integratsiya rasmiy
-                spetsifikatsiya e'lon qilingach qo'shiladi.
+                Bemorlarni OneID (yoki o'xshash davlat tizimi) orqali PINFL/pasport bilan
+                tekshirish. O'chirilgan holatda tekshiruv so'rovlari mock (test) ma'lumot
+                qaytaradi — haqiqiy tashqi so'rov yuborilmaydi.
             </p>
         </div>
+        <button type="button" class="btn-icon-sm" onclick="toggleGovSettingsForm()">
+            <i class="fa-solid fa-gear"></i> Sozlash
+        </button>
+    </div>
+
+    <div id="govSettingsForm" style="display:none; margin-top:14px; border-top:1px solid var(--border-color); padding-top:14px;">
+        <div class="form-group">
+            <label>Integratsiya nomi</label>
+            <input type="text" id="gov-integration-name" placeholder="OneID">
+        </div>
+        <div class="form-group">
+            <label>API manzili (faqat https://)</label>
+            <input type="text" id="gov-api-url" placeholder="https://api.oneid.uz/v1/verify">
+        </div>
+        <div class="form-group">
+            <label>Tashkilot ID</label>
+            <input type="text" id="gov-organization-id">
+        </div>
+        <div class="form-group">
+            <label>API kalit (bo'sh qoldirilsa — oldingi qiymat saqlanadi)</label>
+            <input type="password" id="gov-api-key" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+            <label>API sir (secret) (bo'sh qoldirilsa — oldingi qiymat saqlanadi)</label>
+            <input type="password" id="gov-api-secret" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="gov-is-enabled" style="width:auto;">
+                Integratsiyani yoqish (o'chirilgan bo'lsa — mock rejim ishlaydi)
+            </label>
+        </div>
+        <div id="govSettingsResult" style="display:none; padding:10px 12px; border-radius:6px; font-size:13px; margin:8px 0;"></div>
+        <button class="btn-save" onclick="saveGovSettings()">Saqlash</button>
     </div>
 </div>
+
+<script>
+function toggleGovSettingsForm() {
+    const el = document.getElementById('govSettingsForm');
+    const opening = el.style.display === 'none';
+    el.style.display = opening ? 'block' : 'none';
+    if (opening) loadGovSettings();
+}
+
+async function loadGovSettings() {
+    try {
+        const resp = await fetch('/api/admin/gov-integration/settings');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        document.getElementById('gov-integration-name').value = data.integration_name || '';
+        document.getElementById('gov-api-url').value = data.api_url || '';
+        document.getElementById('gov-organization-id').value = data.organization_id || '';
+        document.getElementById('gov-is-enabled').checked = !!data.is_enabled;
+        document.getElementById('gov-api-key').placeholder = data.api_key_configured ? '•••• (kiritilgan, o\'zgartirish uchun yozing)' : '••••••••';
+        document.getElementById('gov-api-secret').placeholder = data.api_secret_configured ? '•••• (kiritilgan, o\'zgartirish uchun yozing)' : '••••••••';
+    } catch (e) { /* jim o'tamiz — forma bo'sh holda ochiladi */ }
+}
+
+async function saveGovSettings() {
+    const resultEl = document.getElementById('govSettingsResult');
+    const body = {
+        integration_name: document.getElementById('gov-integration-name').value || null,
+        api_url: document.getElementById('gov-api-url').value || null,
+        organization_id: document.getElementById('gov-organization-id').value || null,
+        is_enabled: document.getElementById('gov-is-enabled').checked,
+    };
+    const apiKey = document.getElementById('gov-api-key').value;
+    const apiSecret = document.getElementById('gov-api-secret').value;
+    if (apiKey) body.api_key = apiKey;
+    if (apiSecret) body.api_secret = apiSecret;
+
+    try {
+        const resp = await fetch('/api/admin/gov-integration/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        resultEl.style.display = 'block';
+        if (!resp.ok) {
+            resultEl.style.background = 'var(--danger-bg, #fdecea)';
+            resultEl.style.color = 'var(--danger, #b3261e)';
+            resultEl.textContent = data.detail || 'Xatolik yuz berdi';
+            return;
+        }
+        resultEl.style.background = 'var(--accent-green-bg, #eaf7ee)';
+        resultEl.style.color = 'var(--accent-green, #1e7e34)';
+        resultEl.textContent = 'Saqlandi';
+        document.getElementById('gov-api-key').value = '';
+        document.getElementById('gov-api-secret').value = '';
+        document.getElementById('govStatusBadge').textContent = data.is_enabled ? 'Yoqilgan' : "O'chirilgan (mock rejim)";
+        loadGovSettings();
+    } catch (e) {
+        resultEl.style.display = 'block';
+        resultEl.textContent = 'Tarmoq xatosi';
+    }
+}
+</script>
 {% endif %}
 {% endblock %}

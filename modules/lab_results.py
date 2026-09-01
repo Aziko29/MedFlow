@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -28,7 +28,11 @@ from audit import log_action
 router = APIRouter(prefix="/lab-results", tags=["Lab Results"])
 templates = Jinja2Templates(directory="templates")
 
-EDIT_ROLES = ("admin", "doctor", "reception")
+# Prompt 5: modulga faqat doctor va lab_doctor kirita/tahrirlaydi/o'chiradi.
+# admin faqat ko'rishi mumkin (VIEW_ROLES'da bor, CREATE_ROLES'da yo'q).
+# cashier, reception, assistant_admin — modulga UMUMAN kira olmaydi.
+VIEW_ROLES = ("admin", "doctor", "lab_doctor")
+CREATE_ROLES = ("doctor", "lab_doctor")
 
 
 def _ctx(request: Request, user: models.User, active_page: str, extra: Optional[dict] = None) -> dict:
@@ -70,6 +74,12 @@ def list_lab_results(
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
+    # ⬅️ Prompt 5: cashier/reception/assistant_admin bu bo'limga UMUMAN
+    # kira olmaydi — to'g'ridan-to'g'ri URL orqali ham 403 qaytadi
+    # (sidebar'da yashirilgan bo'lishi yetarli emas).
+    if user.role not in VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Bu bo'limga kirish huquqingiz yo'q")
+
     query = db.query(models.LabResult)
 
     if search:
@@ -78,6 +88,12 @@ def list_lab_results(
 
     if patient_id:
         query = query.filter(models.LabResult.patient_id == patient_id)
+
+    # lab_doctor barcha tahlil so'rovlarini ko'radi (bu model faqat
+    # laboratoriya natijalarini saqlaydi, shu bilan talab #5 avtomatik
+    # bajariladi) — o'ziga tegishli bo'lmagan yozuvlarni ham ko'rish
+    # kerak, chunki kim kiritishi kerakligini shundan bilishadi. Tahrirlash
+    # va o'chirish esa pastda alohida (faqat o'ziga tegishli) cheklangan.
 
     results = query.order_by(models.LabResult.created_at.desc()).all()
     patients = db.query(models.Patient).all()
@@ -135,8 +151,13 @@ def add_lab_result(
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    if user.role not in EDIT_ROLES:
-        return _redirect_with_error("Bu amal uchun ruxsatingiz yo'q.")
+    if user.role not in CREATE_ROLES:
+        raise HTTPException(status_code=403, detail="Bu amal uchun ruxsatingiz yo'q")
+
+    # ⬅️ Prompt 5: doctor va lab_doctor natijani faqat O'Z nomidan kirita
+    # oladi — formadan boshqa shifokor tanlangan bo'lsa ham e'tiborsiz
+    # qoldiriladi (boshqa shifokor nomidan yozuv qo'shib bo'lmaydi).
+    doctor_id = user.doctor_id
 
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
@@ -198,12 +219,18 @@ def edit_lab_result(
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    if user.role not in EDIT_ROLES:
-        return _redirect_with_error("Bu amal uchun ruxsatingiz yo'q.")
+    if user.role not in CREATE_ROLES:
+        raise HTTPException(status_code=403, detail="Bu amal uchun ruxsatingiz yo'q")
 
     result = db.query(models.LabResult).filter(models.LabResult.id == result_id).first()
     if not result:
         return _redirect_with_error("Tahlil natijasi topilmadi.")
+
+    # ⬅️ Prompt 5: doctor va lab_doctor faqat O'ZIGA biriktirilgan
+    # natijani tahrirlaydi va shifokorni boshqasiga o'zgartira olmaydi.
+    if result.doctor_id != user.doctor_id:
+        raise HTTPException(status_code=403, detail="Bu tahlil natijasi sizga biriktirilmagan")
+    doctor_id = user.doctor_id
 
     parsed = _parse_result_data(result.result_data)
     if not parsed:
@@ -248,17 +275,21 @@ def delete_lab_result(
     result_id: int,
     db: Session = Depends(get_db)
 ):
-    """Tahlil natijasini o'chirish (Faqat Admin uchun)."""
+    """Tahlil natijasini o'chirish — faqat doctor/lab_doctor, va faqat
+    o'zi kiritgan natijani (Prompt 5, talab #1 va #3)."""
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    if user.role != "admin":
-        return _redirect_with_error("Faqat adminlar tahlil natijasini o'chira oladi.")
+    if user.role not in CREATE_ROLES:
+        raise HTTPException(status_code=403, detail="Bu amal uchun ruxsatingiz yo'q")
 
     result = db.query(models.LabResult).filter(models.LabResult.id == result_id).first()
     if not result:
         return _redirect_with_error("Tahlil topilmadi.")
+
+    if result.doctor_id != user.doctor_id:
+        raise HTTPException(status_code=403, detail="Bu tahlil natijasi sizga biriktirilmagan")
 
     test_name = result.test_name
     db.delete(result)

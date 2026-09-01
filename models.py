@@ -45,6 +45,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     event,
@@ -73,13 +74,38 @@ APPOINTMENT_TRANSITIONS = {
     "in_progress": {"completed", "delayed", "cancelled"},
 }
 
-USER_ROLES = ("admin", "reception", "doctor", "cashier")
+USER_ROLES = (
+    "admin",
+    "reception",
+    "doctor",
+    "cashier",
+    # ⬅️ YANGI: assistant_admin — yordamchi admin (hisobotlarni ko'rish,
+    # xodimlarni ko'rish/qo'shish, bemorlarni/navbatlarni ko'rish,
+    # dashboard va xavfsizlik monitoringini FAQAT o'qish — huquqlar
+    # ro'yxati main.py'dagi ROLE_MODULE_ACCESS'da aniqlangan).
+    "assistant_admin",
+    # ⬅️ YANGI: lab_doctor — laboratoriya shifokori (faqat tahlil
+    # natijalarini kiritish/ko'rish va o'ziga biriktirilgan bemorlarni
+    # ko'rish; boshqa modullarga kirish yo'q). "doctor" kabi doctor_id
+    # orqali bitta Doctor yozuviga bog'lanadi (qarang: modules/auth_module.py
+    # _validate_doctor_link) — shu bog'lanish orqali "o'ziga biriktirilgan
+    # bemorlar" LabResult.doctor_id bo'yicha aniqlanadi.
+    "lab_doctor",
+)
 
 # Bemor moduli — allergiya og'irlik darajasi va surunkali kasallik holati
 # uchun ruxsat etilgan qiymatlar (schemas.py shu yerdan import qiladi,
 # APPOINTMENT_STATUSES bilan bir xil naqsh).
 ALLERGY_SEVERITIES = ("yengil", "o'rta", "og'ir")
 CHRONIC_CONDITION_STATUSES = ("faol", "remissiyada", "davolangan")
+
+# Admin profili moduli (Prompt 8) — "ish o'rni" (Position) qaysi rolga
+# mo'ljallanganini bildiradi. Bu USER_ROLES BILAN BIR XIL EMAS: "nurse"
+# (hamshira) tizimga kirish huquqiga ega bo'lgan login-roli emas (u
+# USER_ROLES'da yo'q), shuning uchun alohida, kichikroq ro'yxat sifatida
+# aniqlangan (schemas.py shu yerdan import qiladi, boshqa *_STATUSES /
+# *_ROLES konstantalari bilan bir xil naqsh).
+POSITION_ROLES = ("doctor", "nurse", "lab_doctor", "cashier", "reception")
 
 # ── Xodimning o'z profilida parolni almashtirish limiti ──────────────
 # Xodim o'z profilidan ("Sozlamalar" sahifasi) ketma-ket ko'pi bilan shu
@@ -90,11 +116,25 @@ CHRONIC_CONDITION_STATUSES = ("faol", "remissiyada", "davolangan")
 # almashtirish imkoni beriladi (qarang: modules/auth_module.py).
 SELF_PASSWORD_CHANGE_LIMIT = 3
 
+# ── Sozlamalar moduli (Prompt 12) — 2-qatlam parol bilan himoyalangan
+# xavfli amallar ──────────────────────────────────────────────────────
+# POST /settings/dangerous-action shu ro'yxatdagi action_type'lardan
+# birini qabul qiladi (schemas.DangerousActionRequest shu yerdan import
+# qiladi, boshqa *_STATUSES/*_ROLES konstantalari bilan bir xil naqsh).
+# Har biri modules/settings_module.py'da alohida handler'ga ega.
+DANGEROUS_ACTION_TYPES = (
+    "clear_db",
+    "delete_all_patients",
+    "restart_system",
+    "reset_sessions",
+)
+
 
 class User(Base):
     """🔐 Tizim foydalanuvchilari — rol asosida ruxsatlar (reception,
-    doctor, cashier, admin) uchun. Parol hech qachon ochiq matnda
-    saqlanmaydi (auth.py'dagi hash_password() bilan xeshlanadi)."""
+    doctor, cashier, admin, assistant_admin, lab_doctor) uchun. Parol
+    hech qachon ochiq matnda saqlanmaydi (auth.py'dagi hash_password()
+    bilan xeshlanadi)."""
 
     __tablename__ = "users"
 
@@ -103,8 +143,9 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     fullname = Column(String, nullable=False)
     role = Column(String, nullable=False, default="reception")
-    # Agar rol="doctor" bo'lsa, shu foydalanuvchi qaysi Doctor yozuviga mos
-    # kelishini bildiradi (shifokor faqat o'z navbatlarini ko'rishi uchun).
+    # Agar rol="doctor" YOKI "lab_doctor" bo'lsa, shu foydalanuvchi qaysi
+    # Doctor yozuviga mos kelishini bildiradi (shifokor/lab shifokori
+    # faqat o'ziga tegishli navbatlar/bemorlar/tahlillarni ko'rishi uchun).
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=True)
 
     # 🔐 Xodimning "Sozlamalar" sahifasidan o'zi nechta marta parolni
@@ -114,6 +155,18 @@ class User(Base):
     # shu bilan bu "ketma-ket, oxirgi admin tekshiruvidan beri" hisoblagich
     # bo'lib qoladi, umrbod cheklov emas.
     self_password_change_count = Column(Integer, nullable=False, default=0)
+
+    # 🆕 Sozlamalar moduli (Prompt 12) — "Profil" bo'limida xodim o'zi
+    # tahrirlaydigan qo'shimcha shaxsiy ma'lumotlar. fullname (majburiy,
+    # login/audit/kvitansiyalarda ishlatiladi) bilan almashtirilmaydi —
+    # bular unga QO'SHIMCHA, ixtiyoriy maydonlar, shuning uchun barchasi
+    # nullable. email/phone HECH QANDAY login/SMS logikasida ishlatilmaydi
+    # (bemor SMS'lari uchun alohida Patient.phone bor) — faqat ko'rsatish/
+    # bog'lanish uchun.
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
 
     doctor = relationship("Doctor", back_populates="user_account")
 
@@ -216,6 +269,40 @@ class Patient(Base):
     reminder_first_hours = Column(Integer, nullable=True, default=24)
     reminder_second_hours = Column(Integer, nullable=True, default=2)
 
+    # 🛏️ Palata (statsionar davolash) — Prompt 7. Bemor palataga
+    # yotqizilganda room_number/admitted_at to'ldiriladi va
+    # is_admitted=True bo'ladi; chiqarilganda discharged_at yoziladi va
+    # is_admitted=False bo'ladi. Tarix saqlanadi: discharge qilingandan
+    # keyin ham admitted_at/discharged_at/room_number o'chirilmaydi —
+    # keyingi safar qayta yotqizilganda ular ustiga yoziladi (bir vaqtning
+    # o'zida faqat bitta "joriy" yotqizilish bo'ladi, chunki bu oddiy
+    # Column'lar, alohida tarix jadvali emas).
+    room_number = Column(String(20), nullable=True)
+    admitted_at = Column(DateTime, nullable=True)
+    discharged_at = Column(DateTime, nullable=True)
+    is_admitted = Column(Boolean, nullable=False, default=False)
+
+    # 🏛️ Prompt 10 — davlat identifikatsiya tizimi (OneID va o'xshash)
+    # integratsiyasi. pinfl/passport phone/address bilan bir xil pattern:
+    # EncryptedString (crypto_fields.py) + qidiruv uchun blind index
+    # (aynan phone_bidx kabi — AES-GCM tasodifiy nonce ishlatgani uchun
+    # ustunning o'zi bo'yicha to'g'ridan-to'g'ri UNIQUE/qidiruv ishlamaydi).
+    # Talabnomadagi xom "unique=True oddiy String" o'rniga shu loyihadagi
+    # PII-shifrlash standarti qo'llanildi.
+    pinfl = Column(EncryptedString(14, aad_context="patient.pinfl"), nullable=True)  # JShShIR
+    pinfl_bidx = Column(String(64), unique=True, index=True, nullable=True)
+    passport_series = Column(
+        EncryptedString(4, aad_context="patient.passport_series"), nullable=True
+    )
+    passport_number = Column(
+        EncryptedString(16, aad_context="patient.passport_number"), nullable=True
+    )
+    # Davlat tizimi (yoki mock rejim) orqali tekshirilganmi. Faqat
+    # modules/gov_integration.py'dagi /patients/register-with-gov yoki
+    # /patients/{id}/verify-gov orqali True qilinadi — qo'lda PatientUpdate
+    # orqali o'rnatib bo'lmaydi (schemas.PatientBase'da yo'q).
+    is_verified = Column(Boolean, nullable=False, default=False)
+
     appointments = relationship(
         "Appointment", back_populates="patient", cascade="all, delete-orphan"
     )
@@ -245,6 +332,7 @@ def _sync_patient_phone_bidx(mapper, connection, target: "Patient") -> None:
     """phone_bidx har doim joriy `phone` bilan mos bo'lishini ta'minlaydi
     (qidiruv/dublikat tekshiruvi shu ustun orqali, plaintext saqlanmaydi)."""
     target.phone_bidx = blind_index(target.phone) if target.phone else None
+    target.pinfl_bidx = blind_index(target.pinfl) if target.pinfl else None
 
 
 class Appointment(Base):
@@ -301,7 +389,15 @@ def _generate_appointment_cancel_token(mapper, connection, target: "Appointment"
 
 class Payment(Base):
     """💰 To'lovlar jadvali — HAR BIR to'lov aniq bitta qabulga (Appointment)
-    bog'langan bo'lishi shart."""
+    bog'langan bo'lishi shart.
+
+    Prompt 6: ikki bosqichli qaytarim — `status` asl to'lovning holatini
+    bildiradi ("completed" -> admin bekor qiladi -> "cancelled" (= pul
+    hali qaytarilmagan, "qaytarish kutilmoqda") -> kassir haqiqiy pulni
+    qaytaradi -> "refunded"). Pul harakati faqat "refunded"ga o'tganda
+    (is_refund=True qaytarim yozuvi qo'shilganda) sodir bo'ladi — shu
+    bilan appointment.debt/dashboard tushumi eski hisob-kitob mantig'i
+    bilan mos qoladi."""
 
     __tablename__ = "payments"
 
@@ -316,13 +412,28 @@ class Payment(Base):
     )
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    # ── Prompt 6: ikki bosqichli qaytarim holati va audit izi ──────────
+    status = Column(String, nullable=False, default="completed", index=True)
+    cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    refunded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    refunded_at = Column(DateTime, nullable=True)
+    refund_reason = Column(String, nullable=True)
+
     patient = relationship("Patient", back_populates="payments")
     
     # 🔴 XATOLIK SHU YERDA EDI (oldin appointment = relationship(..., back_populates="payments") edi)
     # Buni to'g'ri bog'lanishga o'zgartiramiz:
     appointment = relationship("Appointment", back_populates="payments")
     
-    refund_of = relationship("Payment", remote_side=[id], backref="refund")
+    refund_of = relationship("Payment", remote_side=[id], backref="refund", foreign_keys=[refund_of_payment_id])
+    cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
+    refunded_by = relationship("User", foreign_keys=[refunded_by_id])
+
+
+# Payment.status uchun ruxsat etilgan qiymatlar (single source of truth).
+PAYMENT_STATUSES = ("completed", "cancelled", "refunded")
+
 
 class LabResult(Base):
     """🔬 Tahlil natijalari jadvali — modules/lab_results.py shu modelga
@@ -471,25 +582,183 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
 
 
-class GovIntegrationSettings(Base):
-    """🏛️ FAZA 3 (SKELETON) — Davlat raqamli platformasi (masalan OneID,
-    Raqamli sog'liqni saqlash) bilan integratsiya uchun bo'sh sozlamalar
-    jadvali.
+SECURITY_MESSAGE_PRIORITIES = ("low", "medium", "high")
 
-    MUHIM: bu FAZA hech qanday tashqi API bilan gaplashmaydi.
-    `is_enabled` shu bosqichda HAR DOIM False bo'lib qoladi — u faqat
-    kelajakda (rasmiy spetsifikatsiya e'lon qilingach) haqiqiy integratsiya
-    yoqilganda True qilinadi. `provider_name` va `config_json` hozircha
-    doim NULL; ular kelajakdagi provayder nomi va API kalitlari/sozlamalari
-    uchun joy egallab turibdi, xolos.
+
+class SecurityMessage(Base):
+    """📨 Xavfsizlik markazi (Prompt 9) — shifokorlar (doctor/lab_doctor)
+    tomonidan adminga yuboriladigan savol/xabarlar. from_user_id AuditLog
+    bilan bir xil naqsh bo'yicha nullable — yuboruvchi keyinchalik
+    o'chirilsa ham (users.id -> SET NULL emas, lekin FK nullable bo'lgani
+    uchun) xabarning o'zi yo'qolmaydi. is_read faqat admin (yoki
+    assistant_admin/xavfsizlikni ko'rish huquqiga ega shaxs emas — yozish
+    amali, shuning uchun faqat admin) tomonidan belgilanadi; o'chirish ham
+    faqat admin uchun (qarang: modules/security_center.py)."""
+
+    __tablename__ = "security_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    subject = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    priority = Column(String(20), nullable=False, default="medium")  # low, medium, high
+    is_read = Column(Boolean, nullable=False, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+    from_user = relationship("User")
+
+
+class SystemError(Base):
+    """🛑 Tizim xatoliklari jurnali (Prompt 9) — main.py'dagi global
+    (500) exception handler va require_role/_require_module orqali
+    tutilgan ruxsatsiz kirish urinishlari (401/403) avtomatik shu yerga
+    yozadi (qarang: modules/security_center.py -> record_system_error).
+    Yozuvlar hech qachon tahrirlanmaydi/o'chirilmaydi — haqiqiy xatolik
+    tarixi bo'lib qoladi."""
+
+    __tablename__ = "system_errors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    endpoint = Column(String(255), nullable=False)
+    error_message = Column(Text, nullable=False)
+    traceback = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
+class LoginLog(Base):
+    """🔑 Kirish (login) jurnali (Prompt 9) — har bir login urinishi,
+    muvaffaqiyatli yoki muvaffaqiyatsiz, modules/auth_module.py login()
+    tomonidan shu yerga yoziladi. username AuditLog bilan bir xil
+    naqsh bo'yicha alohida matn sifatida saqlanadi (foydalanuvchi
+    topilmagan urinishlarda ham, yoki keyinchalik User o'chirilganda ham
+    tarix o'qilishi uchun). 3 marta ketma-ket muvaffaqiyatsiz urinish
+    aniqlansa, security_center.py adminga avtomatik SecurityMessage
+    yaratadi."""
+
+    __tablename__ = "login_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    username = Column(String, nullable=False, index=True)
+    success = Column(Boolean, nullable=False, index=True)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
+class AdminProfileSettings(Base):
+    """🏥 Admin profili moduli (Prompt 8) — klinika haqida umumiy
+    ma'lumotlar (nomi, manzili, telefoni, litsenziyasi, ish vaqti).
+
+    GovIntegrationSettings bilan bir xil naqsh: bitta QATOR uchun
+    mo'ljallangan sozlamalar jadvali (modules/admin_profile.py'dagi
+    _get_settings() get-or-create orqali oladi).
+
+    MUHIM (talab #6): "ish o'rinlari" (positions) va "sohalar"
+    (departments) alohida jadvallar EMAS — ular shu bitta jadvalning
+    `positions` / `departments` JSON ustunlarida ro'yxat sifatida
+    saqlanadi. Har bir element o'z "id" maydoniga ega (butun son,
+    ketma-ket o'suvchi — next_position_id / next_department_id orqali
+    hisoblanadi), lekin bu DB darajasidagi PK/FK EMAS, JSON ichidagi
+    oddiy maydon, xolos — /positions/{id}, /departments/{id} kabi
+    endpointlar shu "id" bo'yicha JSON ro'yxat ichidan qidiradi.
+
+    Yozuvlar HAR DOIM yangi list/dict obyekti sifatida qayta
+    o'rnatiladi (masalan `settings.positions = new_list`), joyida
+    (in-place) o'zgartirilmaydi — aks holda SQLAlchemy JSON ustunidagi
+    o'zgarishni sezmay, commit vaqtida hech narsa yozilmay qolishi
+    mumkin edi (Mutable tracking ishlatilmagani uchun)."""
+
+    __tablename__ = "admin_profile_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ── Klinika ma'lumotlari ────────────────────────────────────────
+    clinic_name = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    license_number = Column(String, nullable=True)
+    working_hours = Column(String, nullable=True)
+
+    # ── Ish o'rinlari / Sohalar (JSON ro'yxatlar, qarang class docstring) ──
+    positions = Column(JSON, nullable=False, default=list)
+    departments = Column(JSON, nullable=False, default=list)
+    next_position_id = Column(Integer, nullable=False, default=1)
+    next_department_id = Column(Integer, nullable=False, default=1)
+
+    # 🆕 Sozlamalar moduli (Prompt 12) — navbat/qabul oralig'i (daqiqa).
+    # Klinika ma'lumotlari (nomi/manzili/telefoni/ish vaqti) allaqachon
+    # shu jadvalda bo'lgani uchun (Prompt 8), ClinicSettingsUpdate ham
+    # ALOHIDA jadval EMAS, shu qatorga bitta ustun qo'shib ishlaydi —
+    # ikkita joyda bir xil "klinika ma'lumotlari"ni saqlash chalkashlik
+    # keltirib chiqarardi.
+    queue_interval_minutes = Column(Integer, nullable=False, default=15)
+
+    updated_at = Column(DateTime, nullable=True)
+
+
+class SystemSettings(Base):
+    """⚙️ Sozlamalar moduli (Prompt 12) — tizim darajasidagi umumiy
+    sozlamalar (vaqt zonasi, sana formati, sessiya muddati, login
+    urinishlar limiti).
+
+    AdminProfileSettings/GovIntegrationSettings bilan BIR XIL naqsh:
+    bitta QATOR uchun mo'ljallangan (get-or-create, qarang
+    modules/settings_module.py'dagi _get_system_settings()). Faqat
+    admin PUT /settings/system orqali o'zgartira oladi.
+
+    MUHIM: bu yerdagi session_timeout_minutes/max_login_attempts hozircha
+    FAQAT saqlanadi va ko'rsatiladi — auth.py'dagi haqiqiy sessiya
+    muddati/login-urinish cheklovi bular bilan hali ulanmagan (bu alohida
+    keyingi bosqich, chunki auth.py konstantalari import vaqtida
+    o'qiladi, DB qatoridan emas). Shu bois PUT /settings/system javobida
+    va logda bu aniq eslatiladi.
+    """
+
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timezone = Column(String, nullable=False, default="Asia/Tashkent")
+    date_format = Column(String, nullable=False, default="dd.MM.yyyy")
+    session_timeout_minutes = Column(Integer, nullable=False, default=480)  # 8 soat
+    max_login_attempts = Column(Integer, nullable=False, default=5)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class GovIntegrationSettings(Base):
+    """🏛️ Prompt 10 — Davlat raqamli platformasi (OneID, MyGov va h.k.)
+    bilan integratsiya sozlamalari.
+
+    AdminProfileSettings bilan bir xil naqsh: bitta QATOR (get-or-create,
+    qarang modules/gov_integration.py'dagi _get_settings()).
+
+    Xavfsizlik: api_key/api_secret HECH QACHON ochiq matnda saqlanmaydi —
+    crypto_fields.EncryptedString (AES-256-GCM, `cryptography` kutubxonasi)
+    orqali, patients jadvalidagi phone/pinfl bilan bir xil mexanizm.
+    Bu qiymatlar faqat is_enabled=True bo'lganda va admin tomonidan
+    kiritilgandan keyin tashqi so'rovlarda ishlatiladi — is_enabled=False
+    bo'lsa (standart holat), modules/gov_integration.py hech qanday tashqi
+    API bilan gaplashmaydi, faqat mock ma'lumot qaytaradi (talab #5).
     """
 
     __tablename__ = "gov_integration_settings"
 
     id = Column(Integer, primary_key=True, index=True)
+    integration_name = Column(String(100), nullable=True)  # "OneID", "MyGov", va h.k.
     is_enabled = Column(Boolean, nullable=False, default=False)
-    provider_name = Column(String(64), nullable=True)  # masalan "OneID" — hozircha NULL
-    config_json = Column(Text, nullable=True)  # kelajakda API kalitlar uchun, hozircha NULL
+    api_url = Column(String(500), nullable=True)
+    api_key = Column(
+        EncryptedString(500, aad_context="gov_integration.api_key"), nullable=True
+    )
+    api_secret = Column(
+        EncryptedString(500, aad_context="gov_integration.api_secret"), nullable=True
+    )
+    organization_id = Column(String(100), nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, nullable=True)
 
 

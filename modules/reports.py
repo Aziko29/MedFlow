@@ -24,13 +24,17 @@ from sqlalchemy.orm import Session
 
 import models
 import schemas
-from auth import require_role
+from auth import require_admin_or_assistant
 from database import get_db
 
 router = APIRouter(
     prefix="/api/reports",
     tags=["Reports"],
-    dependencies=[Depends(require_role("admin"))],
+    # ⬅️ YANGI: assistant_admin ham BARCHA hisobotlarni (bu yerdagi barcha
+    # endpointlar faqat GET, yozuv yo'q) ko'ra oladi — talab: "Barcha
+    # hisobotlarni ko'rish". main.py'dagi reports_page (HTML) ham shu
+    # bilan izchil.
+    dependencies=[Depends(require_admin_or_assistant())],
 )
 
 

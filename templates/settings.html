@@ -1,0 +1,477 @@
+<!-- templates/settings.html -->
+{% extends "base.html" %}
+
+{% block title %}Sozlamalar{% endblock %}
+
+{% block extra_style %}
+.settings-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; margin-bottom: 24px;
+}
+.settings-card {
+    background: var(--bg-panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 4px; border: 1px solid var(--border-color); padding: 24px;
+}
+.settings-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.settings-card-header i { font-size: 18px; color: var(--primary); }
+.settings-card-header h3 { font-size: 16px; font-weight: 600; }
+.settings-card-desc { font-size: 12.5px; color: var(--text-muted); margin: -10px 0 16px; line-height: 1.5; }
+
+.pw-progress-track {
+    width: 100%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06);
+    overflow: hidden; margin: 10px 0 6px;
+}
+.pw-progress-fill { height: 100%; border-radius: 4px; background: var(--accent-green); transition: width 0.3s ease; }
+.pw-progress-fill.warn { background: #ff9f43; }
+.pw-progress-fill.danger { background: var(--danger); }
+.pw-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; }
+.pw-warning-box {
+    background: rgba(255,61,110,0.1); border: 1px solid rgba(255,61,110,0.3); color: #ff9fb6;
+    border-radius: 4px; padding: 14px 16px; font-size: 13.5px; line-height: 1.55;
+}
+.pw-warning-box i { color: var(--danger); margin-right: 6px; }
+
+/* ⚠️ Xavfli amallar kartochkasi — qolganlaridan ATAYLAB rangi bilan ajratiladi */
+.danger-zone-card {
+    background: rgba(255, 61, 110, 0.06);
+    border: 1px solid rgba(255, 61, 110, 0.35);
+    border-radius: 4px; padding: 24px; margin-top: 8px;
+}
+.danger-zone-card .settings-card-header i { color: var(--danger); }
+.danger-zone-card .settings-card-desc { color: #ff9fb6; }
+.danger-confirm-row {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+    padding: 14px; border: 1px dashed rgba(255,61,110,0.4); border-radius: 4px;
+    background: rgba(255,61,110,0.04);
+}
+.danger-confirm-row input {
+    flex: 1; padding: 10px 14px; border: 1px solid rgba(255,61,110,0.4); border-radius: 4px;
+    background: var(--input-bg); color: var(--text-dark); font-family: inherit; font-size: 14px;
+}
+.danger-confirm-row input:focus { outline: none; border-color: var(--danger); box-shadow: 0 0 12px rgba(255,61,110,0.3); }
+.danger-actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.btn-danger-zone {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(255,61,110,0.14); color: #ff6b8f; border: 1px solid rgba(255,61,110,0.4);
+    padding: 14px 16px; border-radius: 4px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-danger-zone:hover:not(:disabled) { background: var(--danger); color: #fff; box-shadow: 0 0 18px rgba(255,61,110,0.45); }
+.btn-danger-zone:disabled { opacity: 0.4; cursor: not-allowed; background: rgba(255,255,255,0.04); color: var(--text-muted); border-color: var(--border-color); }
+
+.theme-mode-options { display: flex; flex-direction: column; gap: 10px; }
+.theme-mode-option {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;
+    background: var(--bg-secondary); transition: all 0.2s;
+}
+.theme-mode-option:hover { border-color: var(--accent-color); }
+.theme-mode-option input[type="radio"] { accent-color: var(--accent-color); width: 16px; height: 16px; cursor: pointer; }
+.theme-mode-option i { font-size: 16px; color: var(--accent-color); width: 18px; text-align: center; }
+.theme-mode-option .tmo-text { display: flex; flex-direction: column; }
+.theme-mode-option .tmo-text strong { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.theme-mode-option .tmo-text span { font-size: 12px; color: var(--text-muted); }
+{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title">
+        <h1>Sozlamalar <span>Profil, parol{% if current_user.role == 'admin' %} va tizim sozlamalari{% endif %}</span></h1>
+    </div>
+</div>
+
+<div class="settings-grid">
+    <!-- ═══════════════ Profil sozlamalari ═══════════════ -->
+    <div class="settings-card">
+        <div class="settings-card-header"><i class="fa-solid fa-id-card"></i><h3>Profil ma'lumotlari</h3></div>
+        <div class="settings-card-desc">
+            Login (<strong>{{ current_user.username }}</strong>), F.I.O va rol bu yerdan o'zgartirilmaydi —
+            faqat qo'shimcha bog'lanish ma'lumotlari.
+        </div>
+        <div id="profileFormError" class="form-error"></div>
+        <form id="profileForm" onsubmit="submitProfileForm(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pf-first-name">Ism</label>
+                    <input type="text" id="pf-first-name" value="{{ profile.first_name or '' }}" placeholder="Masalan: Aziz">
+                </div>
+                <div class="form-group">
+                    <label for="pf-last-name">Familiya</label>
+                    <input type="text" id="pf-last-name" value="{{ profile.last_name or '' }}" placeholder="Masalan: Karimov">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="pf-phone">Telefon</label>
+                <input type="text" id="pf-phone" value="{{ profile.phone or '' }}" placeholder="+998901234567">
+            </div>
+            <div class="form-group">
+                <label for="pf-email">Email</label>
+                <input type="email" id="pf-email" value="{{ profile.email or '' }}" placeholder="aziz@example.com">
+            </div>
+            <button type="submit" class="btn-save" id="profileSaveBtn">Saqlash</button>
+        </form>
+    </div>
+
+    <!-- ═══════════════ Ko'rinish (Dark/Light/Auto) ═══════════════ -->
+    <div class="settings-card">
+        <div class="settings-card-header"><i class="fa-solid fa-circle-half-stroke"></i><h3>Ko'rinish (Interfeys)</h3></div>
+        <div class="settings-card-desc">
+            Interfeys mavzusini tanlang. "Avto" tanlansa, qurilmangizning tizim sozlamasiga (yorug'/qorong'u) mos ravishda avtomatik o'zgaradi.
+        </div>
+        <div class="theme-mode-options" role="radiogroup" aria-label="Mavzu tanlash">
+            <label class="theme-mode-option">
+                <input type="radio" name="theme-mode" value="light" onchange="setThemeMode(this.value)">
+                <i class="fa-solid fa-sun"></i>
+                <span class="tmo-text"><strong>Yorug' rejim</strong><span>Har doim yorug' (qaymoq) mavzu</span></span>
+            </label>
+            <label class="theme-mode-option">
+                <input type="radio" name="theme-mode" value="dark" onchange="setThemeMode(this.value)">
+                <i class="fa-solid fa-moon"></i>
+                <span class="tmo-text"><strong>Qorong'u rejim</strong><span>Har doim qorong'u mavzu</span></span>
+            </label>
+            <label class="theme-mode-option">
+                <input type="radio" name="theme-mode" value="auto" onchange="setThemeMode(this.value)">
+                <i class="fa-solid fa-display"></i>
+                <span class="tmo-text"><strong>Avto</strong><span>Qurilma/tizim sozlamasiga mos</span></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- ═══════════════ Parolni o'zgartirish ═══════════════ -->
+    <div class="settings-card">
+        <div class="settings-card-header"><i class="fa-solid fa-key"></i><h3>Parolni o'zgartirish</h3></div>
+
+        {% if limit_reached %}
+        <div class="pw-warning-box" style="margin-bottom:16px;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Ruxsat etilgan limit ({{ password_limit }} marta) tugadi. Yangi vaqtinchalik parol uchun
+            administratorga murojaat qiling.
+        </div>
+        {% else %}
+        <div class="settings-card-desc">
+            O'z profilingizdan ketma-ket ko'pi bilan {{ password_limit }} marta parolni o'zingiz almashtira olasiz.
+        </div>
+        {% endif %}
+
+        <div class="pw-progress-track">
+            <div class="pw-progress-fill {% if changes_remaining == 0 %}danger{% elif changes_remaining == 1 %}warn{% endif %}"
+                 style="width: {{ (changes_used / password_limit * 100) if password_limit else 0 }}%;" id="pwProgressFill"></div>
+        </div>
+        <div class="pw-note" id="pwProgressNote">Ishlatilgan: {{ changes_used }} / {{ password_limit }}</div>
+
+        <div id="passwordFormError" class="form-error" style="margin-top:16px;"></div>
+        <form id="passwordForm" onsubmit="submitPasswordForm(event)" style="margin-top:16px;">
+            <div class="form-group">
+                <label for="pw-old">Eski parol</label>
+                <input type="password" id="pw-old" required autocomplete="current-password" {% if limit_reached %}disabled{% endif %}>
+            </div>
+            <div class="form-group">
+                <label for="pw-new">Yangi parol</label>
+                <input type="password" id="pw-new" required minlength="6" autocomplete="new-password" {% if limit_reached %}disabled{% endif %}>
+            </div>
+            <div class="form-group">
+                <label for="pw-confirm">Yangi parolni tasdiqlang</label>
+                <input type="password" id="pw-confirm" required minlength="6" autocomplete="new-password" {% if limit_reached %}disabled{% endif %}>
+            </div>
+            <button type="submit" class="btn-save" id="passwordSaveBtn" {% if limit_reached %}disabled{% endif %}>Saqlash</button>
+        </form>
+    </div>
+
+    {% if current_user.role == 'admin' %}
+    <!-- ═══════════════ Klinika sozlamalari (admin) ═══════════════ -->
+    <div class="settings-card">
+        <div class="settings-card-header"><i class="fa-solid fa-hospital"></i><h3>Klinika sozlamalari</h3></div>
+        <div class="settings-card-desc">Klinika haqida umumiy ma'lumotlar va navbat oralig'i.</div>
+        <div id="clinicFormError" class="form-error"></div>
+        <form id="clinicForm" onsubmit="submitClinicForm(event)">
+            <div class="form-group">
+                <label for="cl-name">Klinika nomi</label>
+                <input type="text" id="cl-name" required value="{{ clinic_settings.name or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="cl-address">Manzil</label>
+                <input type="text" id="cl-address" required value="{{ clinic_settings.address or '' }}">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="cl-phone">Telefon</label>
+                    <input type="text" id="cl-phone" required value="{{ clinic_settings.phone or '' }}" placeholder="+998712001122">
+                </div>
+                <div class="form-group">
+                    <label for="cl-queue-interval">Navbat oralig'i (daqiqa)</label>
+                    <input type="number" id="cl-queue-interval" required min="1" max="240" value="{{ clinic_settings.queue_interval_minutes }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="cl-hours">Ish vaqti</label>
+                <input type="text" id="cl-hours" required value="{{ clinic_settings.working_hours or '' }}" placeholder="Du-Ju 09:00-18:00">
+            </div>
+            <button type="submit" class="btn-save" id="clinicSaveBtn">Saqlash</button>
+        </form>
+    </div>
+
+    <!-- ═══════════════ Tizim sozlamalari (admin) ═══════════════ -->
+    <div class="settings-card">
+        <div class="settings-card-header"><i class="fa-solid fa-sliders"></i><h3>Tizim sozlamalari</h3></div>
+        <div class="settings-card-desc">Vaqt zonasi, sana formati va xavfsizlik parametrlari.</div>
+        <div id="systemFormError" class="form-error"></div>
+        <form id="systemForm" onsubmit="submitSystemForm(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="sy-timezone">Vaqt zonasi</label>
+                    <select id="sy-timezone">
+                        {% set current_tz = system_settings.timezone if system_settings else 'Asia/Tashkent' %}
+                        <option value="Asia/Tashkent" {% if current_tz == 'Asia/Tashkent' %}selected{% endif %}>Asia/Tashkent (UTC+5)</option>
+                        <option value="Europe/Moscow" {% if current_tz == 'Europe/Moscow' %}selected{% endif %}>Europe/Moscow (UTC+3)</option>
+                        <option value="UTC" {% if current_tz == 'UTC' %}selected{% endif %}>UTC</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sy-date-format">Sana formati</label>
+                    <select id="sy-date-format">
+                        {% set current_fmt = system_settings.date_format if system_settings else 'dd.MM.yyyy' %}
+                        <option value="dd.MM.yyyy" {% if current_fmt == 'dd.MM.yyyy' %}selected{% endif %}>kun.oy.yil (31.12.2026)</option>
+                        <option value="yyyy-MM-dd" {% if current_fmt == 'yyyy-MM-dd' %}selected{% endif %}>yil-oy-kun (2026-12-31)</option>
+                        <option value="MM/dd/yyyy" {% if current_fmt == 'MM/dd/yyyy' %}selected{% endif %}>oy/kun/yil (12/31/2026)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="sy-session-timeout">Sessiya muddati (daqiqa)</label>
+                    <input type="number" id="sy-session-timeout" required min="5" max="1440"
+                           value="{{ system_settings.session_timeout_minutes if system_settings else 480 }}">
+                </div>
+                <div class="form-group">
+                    <label for="sy-max-login-attempts">Login urinishlar limiti</label>
+                    <input type="number" id="sy-max-login-attempts" required min="1" max="20"
+                           value="{{ system_settings.max_login_attempts if system_settings else 5 }}">
+                </div>
+            </div>
+            <span class="form-hint">
+                Diqqat: sessiya muddati/login limiti hozircha faqat saqlanadi — haqiqiy sessiya/login
+                mexanizmiga ulanishi keyingi bosqichda amalga oshiriladi.
+            </span>
+            <button type="submit" class="btn-save" id="systemSaveBtn" style="margin-top:14px;">Saqlash</button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+{% if current_user.role == 'admin' %}
+<!-- ═══════════════ Xavfli amallar (faqat admin) ═══════════════ -->
+<div class="danger-zone-card">
+    <div class="settings-card-header">
+        <i class="fa-solid fa-skull-crossbones"></i>
+        <h3>Xavfli amallar zonasi</h3>
+    </div>
+    <div class="settings-card-desc">
+        Bu bo'limdagi amallar qaytarib bo'lmas yoki tizimga jiddiy ta'sir qiladi. Har biri
+        <strong>2-qatlam tasdiqlash paroli</strong>ni talab qiladi — bu sizning login parolingiz EMAS,
+        server administratori tomonidan alohida o'rnatilgan maxfiy parol.
+    </div>
+
+    <div class="danger-confirm-row">
+        <i class="fa-solid fa-lock" style="color: var(--danger);"></i>
+        <input type="password" id="dangerConfirmPassword" placeholder="Tasdiqlash parolini kiriting..."
+               oninput="updateDangerButtonsState()" autocomplete="off">
+    </div>
+
+    <div class="danger-actions-grid">
+        <button type="button" class="btn-danger-zone" id="btn-clear_db" disabled
+                onclick="runDangerousAction('clear_db', 'Bazani tozalash')">
+            <i class="fa-solid fa-database"></i> Bazani tozalash
+        </button>
+        <button type="button" class="btn-danger-zone" id="btn-delete_all_patients" disabled
+                onclick="runDangerousAction('delete_all_patients', 'Barcha bemorlarni o\'chirish')">
+            <i class="fa-solid fa-user-slash"></i> Barcha bemorlarni o'chirish
+        </button>
+        <button type="button" class="btn-danger-zone" id="btn-restart_system" disabled
+                onclick="runDangerousAction('restart_system', 'Tizimni qayta ishga tushirish')">
+            <i class="fa-solid fa-power-off"></i> Tizimni qayta ishga tushirish
+        </button>
+        <button type="button" class="btn-danger-zone" id="btn-reset_sessions" disabled
+                onclick="runDangerousAction('reset_sessions', 'Barcha sessionlarni bekor qilish')">
+            <i class="fa-solid fa-right-from-bracket"></i> Barcha sessionlarni bekor qilish
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+// ═══════════════ Profil formasi ═══════════════
+async function submitProfileForm(event) {
+    event.preventDefault();
+    const btn = document.getElementById('profileSaveBtn');
+    setFormError('profileFormError', null);
+    btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+    try {
+        await fetchJSON('/settings/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                first_name: document.getElementById('pf-first-name').value || null,
+                last_name: document.getElementById('pf-last-name').value || null,
+                phone: document.getElementById('pf-phone').value || null,
+                email: document.getElementById('pf-email').value || null
+            })
+        });
+        showToast('Profil muvaffaqiyatli yangilandi.', 'success');
+    } catch (err) {
+        setFormError('profileFormError', err.message);
+        showToast(err.message || 'Profilni saqlashda xatolik yuz berdi', 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Saqlash';
+    }
+}
+
+// ═══════════════ Parol formasi ═══════════════
+async function submitPasswordForm(event) {
+    event.preventDefault();
+    const btn = document.getElementById('passwordSaveBtn');
+    setFormError('passwordFormError', null);
+    const newPass = document.getElementById('pw-new').value;
+    const confirmPass = document.getElementById('pw-confirm').value;
+    if (newPass !== confirmPass) {
+        setFormError('passwordFormError', "Yangi parol va tasdiqlash paroli mos kelmadi");
+        return;
+    }
+    btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+    try {
+        const result = await fetchJSON('/settings/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                old_password: document.getElementById('pw-old').value,
+                new_password: newPass,
+                confirm_password: confirmPass
+            })
+        });
+        document.getElementById('passwordForm').reset();
+        showToast(result && result.message ? result.message : 'Parol muvaffaqiyatli yangilandi.', 'success');
+        if (result) {
+            const used = result.changes_used, limit = result.limit;
+            const note = document.getElementById('pwProgressNote');
+            const fill = document.getElementById('pwProgressFill');
+            if (note) note.textContent = 'Ishlatilgan: ' + used + ' / ' + limit;
+            if (fill) {
+                fill.style.width = (limit ? (used / limit * 100) : 0) + '%';
+                fill.classList.remove('warn', 'danger');
+                if (result.changes_remaining === 0) fill.classList.add('danger');
+                else if (result.changes_remaining === 1) fill.classList.add('warn');
+            }
+            if (result.changes_remaining === 0) {
+                // Limit tugadi — sahifani qayta yuklab, forma "disabled" holatiga o'tkaziladi.
+                setTimeout(() => location.reload(), 1200);
+            }
+        }
+    } catch (err) {
+        setFormError('passwordFormError', err.message);
+        showToast(err.message || 'Parolni saqlashda xatolik yuz berdi', 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Saqlash';
+    }
+}
+
+{% if current_user.role == 'admin' %}
+// ═══════════════ Klinika sozlamalari (admin) ═══════════════
+async function submitClinicForm(event) {
+    event.preventDefault();
+    const btn = document.getElementById('clinicSaveBtn');
+    setFormError('clinicFormError', null);
+    btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+    try {
+        await fetchJSON('/settings/clinic', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: document.getElementById('cl-name').value,
+                address: document.getElementById('cl-address').value,
+                phone: document.getElementById('cl-phone').value,
+                working_hours: document.getElementById('cl-hours').value,
+                queue_interval_minutes: parseInt(document.getElementById('cl-queue-interval').value, 10)
+            })
+        });
+        showToast('Klinika sozlamalari saqlandi.', 'success');
+    } catch (err) {
+        setFormError('clinicFormError', err.message);
+        showToast(err.message || 'Klinika sozlamalarini saqlashda xatolik', 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Saqlash';
+    }
+}
+
+// ═══════════════ Tizim sozlamalari (admin) ═══════════════
+async function submitSystemForm(event) {
+    event.preventDefault();
+    const btn = document.getElementById('systemSaveBtn');
+    setFormError('systemFormError', null);
+    btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+    try {
+        await fetchJSON('/settings/system', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                timezone: document.getElementById('sy-timezone').value,
+                date_format: document.getElementById('sy-date-format').value,
+                session_timeout_minutes: parseInt(document.getElementById('sy-session-timeout').value, 10),
+                max_login_attempts: parseInt(document.getElementById('sy-max-login-attempts').value, 10)
+            })
+        });
+        showToast('Tizim sozlamalari saqlandi.', 'success');
+    } catch (err) {
+        setFormError('systemFormError', err.message);
+        showToast(err.message || 'Tizim sozlamalarini saqlashda xatolik', 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Saqlash';
+    }
+}
+
+// ═══════════════ Xavfli amallar ═══════════════
+const DANGER_ACTION_IDS = ['clear_db', 'delete_all_patients', 'restart_system', 'reset_sessions'];
+
+function updateDangerButtonsState() {
+    const hasPassword = document.getElementById('dangerConfirmPassword').value.trim().length > 0;
+    DANGER_ACTION_IDS.forEach(function (actionType) {
+        document.getElementById('btn-' + actionType).disabled = !hasPassword;
+    });
+}
+
+async function runDangerousAction(actionType, label) {
+    const passwordInput = document.getElementById('dangerConfirmPassword');
+    const confirmationPassword = passwordInput.value.trim();
+    if (!confirmationPassword) {
+        showToast('Avval tasdiqlash parolini kiriting.', 'error');
+        return;
+    }
+    const sure = confirm(
+        '"' + label + '" amalini bajarishga aminmisiz? Bu amalni ORQAGA QAYTARIB BO\'LMASLIGI mumkin.'
+    );
+    if (!sure) return;
+
+    const btn = document.getElementById('btn-' + actionType);
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Bajarilmoqda...';
+    try {
+        const result = await fetchJSON('/settings/dangerous-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action_type: actionType,
+                confirmation_password: confirmationPassword
+            })
+        });
+        showToast(result && result.message ? result.message : (label + ' bajarildi.'), 'success');
+    } catch (err) {
+        showToast(err.message || (label + ' amalida xatolik yuz berdi'), 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        updateDangerButtonsState();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', updateDangerButtonsState);
+{% endif %}
+{% endblock %}
