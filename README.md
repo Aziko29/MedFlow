@@ -1,213 +1,373 @@
-# ClinicFlow (MedFlow) — v3.0
+# ClinicFlow (MedFlow) v3.0
 
-Klinika/tibbiyot markazi uchun to'liq boshqaruv tizimi: bemorlar,
-shifokorlar, qabullar (navbat), to'lovlar va laboratoriya tahlil
-natijalarini bitta joyda, bir-biriga bog'langan holda yuritadi.
+> Klinika va tibbiyot markazlari uchun to‘liq avtomatlashtirilgan boshqaruv tizimi.
 
-## Asosiy imkoniyatlar
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688)](https://fastapi.tiangolo.com)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0%2B-red)](https://sqlalchemy.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-- **Bemorlar** — ro'yxatga olish, tahrirlash, o'chirish, qidiruv.
-  Har bir bemor kartochkasida (`/patients/{id}`) **hammasi sinxron**:
-  qabullar tarixi, to'lovlar tarixi va tahlil natijalari — bittasiga
-  qo'shilgan yozuv darhol o'sha bemor sahifasida ham ko'rinadi.
-- **Shifokorlar** — narxnoma (`consultation_price`), ish jadvali,
-  har bir shifokor kartochkasida (`/doctors/{id}`) o'sha shifokorning
-  barcha qabullari.
-- **Qabullar (navbat)** — band qilish, holat state-machine (waiting →
-  in_progress → completed, + delayed/cancelled/no_show), ko'chirish
-  (reschedule), bekor qilish, ikki bemorni bir vaqtga yozib qo'yishning
-  oldini olish (double-booking taqiqi).
-- **To'lovlar** — har bir to'lov aniq bitta qabulga bog'langan, qarz
-  (`narx - to'langan`) real vaqtda hisoblanadi (saqlanadigan soxta
-  "balans" yo'q), qaytarim (refund), CSV eksport.
-- **Tahlil natijalari (Lab Results)** — 20 ta standart tahlil shabloni
-  (qon, siydik, biokimyo va h.k.), ko'rsatkichlar me'yoriy qiymat bilan
-  oldindan to'ldiriladi, me'yordan chetga chiqish (past/yuqori/diqqat)
-  serverda avtomatik hisoblanadi.
-- **Rollar** — admin / reception / doctor / cashier, har biri faqat
-  o'ziga tegishli amallarni bajara oladi.
-- **Audit jurnal** — har bir yozuvchi (qo'shish/o'zgartirish/o'chirish)
-  amal kim, qachon, nima qilgani bilan birga yoziladi (faqat admin
-  ko'radi, `/admin/audit-log`).
-- **Dashboard** — bugungi/jami KPI ko'rsatkichlari va jonli navbat.
+---
 
-## Ishga tushirish (development)
+## 📋 Mundarija
+
+- [Loyiha haqida](#-loyiha-haqida)
+- [Asosiy imkoniyatlar](#-asosiy-imkoniyatlar)
+- [Texnologik stek](#-texnologik-stek)
+- [O‘rnatish](#-ornatish)
+- [Loyiha tuzilishi](#-loyiha-tuzilishi)
+- [Rollar va ruxsatlar](#-rollar-va-ruxsatlar)
+- [Xavfsizlik](#-xavfsizlik)
+- [API hujjatlari](#-api-hujjatlari)
+- [Ekran tasvirlari](#-ekran-tasvirlari)
+- [Litsenziya](#-litsenziya)
+
+---
+
+## 🏥 Loyiha haqida
+
+**ClinicFlow** — klinika, shifoxona va tibbiyot markazlari uchun mo‘ljallangan veb-asosida ishlaydigan boshqaruv tizimi. Bemorlarni ro‘yxatga olish, navbatlarni boshqarish, to‘lovlarni kuzatish, laboratoriya tahlillarini yuritish hamda xodimlar faoliyatini monitoring qilish — barchasi bitta platformada.
+
+Loyiha **FastAPI** asosida qurilgan bo‘lib, yuqori samaradorlik, xavfsizlik va kengaytiriluvchanlikni ta‘minlaydi.
+
+---
+
+## ✨ Asosiy imkoniyatlar
+
+### 👥 Bemorlar boshqaruvi
+- Bemorlarni ro‘yxatga olish, tahrirlash va o‘chirish
+- Shaxsiy ma'lumotlarning **AES-256-GCM** shifrlanishi
+- Telefon raqami bo‘yicha dublikat tekshiruvi (blind index)
+- Bemor rasmini yuklash va saqlash
+- **Allergiyalar** va **surunkali kasalliklar** tarixini yuritish
+- Davolanish tarixini (tashxis va davolash rejasi) vaqt chizig‘i ko‘rinishida ko‘rish
+- Palataga yotqizish/chiqarish (statsionar davolash)
+
+### 👨‍⚕️ Shifokorlar boshqaruvi
+- Shifokorlar ro‘yxati va ularning mutaxassisliklari
+- Konsultatsiya narxi (narxnoma)
+- Ish jadvali va malaka toifasi
+- Har bir shifokor uchun alohida profil va qabullar tarixi
+
+### 📅 Qabullar (Navbat)
+- Onlayn band qilish va vaqtini ko‘chirish
+- **State-machine** asosida holat boshqaruvi:
+  - `waiting` → `in_progress` → `completed`
+  - `delayed`, `cancelled`, `no_show`
+- Bir vaqtda ikki bemor yozishning oldini olish (double-booking taqiqi)
+- Qabul bekor qilish sababini qayd etish
+
+### 💰 To‘lovlar
+- Har bir to‘lov aniq bitta qabulga bog‘langan
+- Real vaqtda qarz hisoblash: `narx - to‘langan`
+- **Ikki bosqichli qaytarim:**
+  1. Admin to‘lovni bekor qiladi (`cancelled`)
+  2. Kassir haqiqiy pulni qaytaradi (`refunded`)
+- To‘lovlar tarixi CSV formatida eksport qilish
+
+### 🔬 Laboratoriya tahlillari
+- 20 ta standart tahlil shabloni (qon, siydik, biokimyo va boshqalar)
+- Ko‘rsatkichlar me‘yoriy qiymat bilan oldindan to‘ldiriladi
+- Me‘yordan chetga chiqish avtomatik aniqlanadi (past/yuqori/diqqat)
+- Tahlil natijalarini bemor kartochkasida sinxron ko‘rish
+
+### 🔐 Rollar va ruxsatlar
+- **Admin** — to‘liq huquq
+- **Reception** — bemorlar, qabullar, to‘lovlar
+- **Doctor** — o‘z qabullari, tahlillar, davolanish tarixi
+- **Cashier** — faqat to‘lovlar va qaytarimlar
+- **Lab Doctor** — faqat tahlil natijalari va o‘ziga biriktirilgan bemorlar
+- **Assistant Admin** — faqat o‘qish (hisobotlar, audit, xodimlar)
+
+### 🛡️ Xavfsizlik markazi
+- **Audit jurnali** — har bir yozuvchi amalni qayd etish (kim, qachon, nima qildi)
+- Kirish (login) loglari va muvaffaqiyatsiz urinishlarni kuzatish
+- Tizim xatoliklarini avtomatik yozib olish
+- Xodimlar o‘rtasida xavfsizlik xabarlari yuborish
+
+### ⚙️ Qo'shimcha funksiyalar
+- Dashboard — bugungi/jami KPI ko‘rsatkichlar va jonli navbat
+- Hisobotlar — shifokor samaradorligi, band vaqt tahlili, bekor qilish sabablari
+- Zaxira nusxa (backup) — avtomatik va qo‘lda
+- Telegram bot orqali eslatmalar (24 soat va 2 soat oldin)
+- Dark/Light/Auto mavzu rejimi
+- Bemor portali (FAZA 2) — SMS-kod orqali kirish
+- Davlat identifikatsiya tizimi integratsiyasi (OneID)
+
+---
+
+## 🛠 Texnologik stek
+
+| Katgoriya | Texnologiya |
+|-----------|-------------|
+| **Backend** | Python 3.11+, FastAPI, Uvicorn |
+| **Ma'lumotlar bazasi** | SQLAlchemy 2.0, Alembic (migratsiyalar) |
+| **Shablonlar** | Jinja2 |
+| **Frontend** | Vanilla JS, Chart.js, Font Awesome |
+| **Shifrlash** | AES-256-GCM (cryptography) |
+| **Parol xeshlash** | PBKDF2 |
+| **Rate Limiting** | slowapi |
+| **Eslatmalar** | APScheduler + python-telegram-bot |
+| **SMS** | Eskiz.uz integratsiyasi |
+
+---
+
+## 🚀 O‘rnatish
+
+### 1. Loyihani klonlash
+
+```bash
+git clone https://github.com/Aziko29/medflow.git
+cd medflow
+```
+
+### 2. Virtual muhit yaratish
+
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# yoki
+venv\Scripts\activate   # Windows
+```
+
+### 3. Bog‘liqliklarni o‘rnatish
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env         # so'ng .env faylini o'zingiznikiga to'ldiring
-alembic upgrade head           # bo'sh, lekin to'liq schema yaratiladi
-python create_users.py          # birinchi admin hisobini yaratish
-python main.py                   # yoki: uvicorn main:app --reload
 ```
 
-**MUHIM:** `.env` faylida `CLINICFLOW_SECRET_KEY` bo'sh bo'lsa, dastur
-ATAYLAB ishga tushmaydi (xavfsizlik uchun). Kalit generatsiya qilish:
+### 4. Muhit o‘zgaruvchilarini sozlash
+
+```bash
+cp .env.example .env
+```
+
+`.env` faylini tahrirlang:
+
+```env
+DATABASE_URL=sqlite:///./clinicflow.db
+# yoki PostgreSQL uchun:
+# DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/clinicflow
+
+CLINICFLOW_SECRET_KEY=your-secret-key-here
+CLINICFLOW_FIELD_KEY=your-field-encryption-key
+CLINICFLOW_BLIND_INDEX_KEY=your-blind-index-key
+CLINICFLOW_ADMIN_ACTIONS_PASSWORD=your-dangerous-actions-password
+
+# Redis (ko‘p worker uchun, ixtiyoriy):
+# CLINICFLOW_REDIS_URL=redis://localhost:6379/0
+
+# Telegram (ixtiyoriy):
+# TELEGRAM_BOT_TOKEN=your-bot-token
+```
+
+Kalitlarni generatsiya qilish:
 
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-**MUHIM (maydon shifrlash):** `patient.phone/address/medical_notes`
-AES-256-GCM bilan shifrlanadi (`crypto_fields.py`). `CLINICFLOW_FIELD_KEY`
-va `CLINICFLOW_BLIND_INDEX_KEY` — ikkalasi ham `.env.example`da bor va
-`cp .env.example .env` qilganingizda avtomatik ravishda `.env`ingizga
-tushadi; generatsiya buyrug'i va izohlar o'sha faylda (bitta manba —
-ikki joyda takrorlanmasin). Ular bo'sh qolsa, dastur birinchi bemor
-amalida `FieldEncryptionError` bilan qulaydi.
-
-Mavjud bazangiz bo'lsa, `alembic upgrade head` shu qatorlarni avtomatik
-shifrlaydi va `phone_bidx` ustunini to'ldiradi (dublikat-telefon tekshiruvi
-endi shu ustun orqali, DB unique constraint emas). Kalit rotatsiyasi uchun
-`rotate_keys.py` ga qarang.
-
-So'ng brauzerda `http://127.0.0.1:8000` oching — `/login`ga
-yo'naltiriladi. Kirish hisobini `python create_users.py` orqali
-o'zingiz yaratasiz (login/parol/rol so'raladi) — hech qanday
-standart/demo hisob loyihada yo'q.
-
-## Ma'lumotlar bazasi migratsiyalari (Alembic)
-
-Schema (jadval/ustun) o'zgarishlari endi Alembic orqali versiyalanadi —
-`models.py`ga to'g'ridan-to'g'ri ustun qo'shib qo'yish YETARLI EMAS,
-mavjud (production) bazasi buni bilmaydi. Har bir model o'zgarishidan
-keyin:
+### 5. Ma'lumotlar bazasini yaratish
 
 ```bash
-# 1. models.py'dagi o'zgarishga mos migratsiya avtomatik yaratiladi
-alembic revision --autogenerate -m "qisqa tavsif, masalan: patients.email ustuni"
-
-# 2. generatsiya qilingan faylni alembic/versions/ ichida albatta
-#    ko'zdan kechiring — autogenerate har doim 100% to'g'ri topavermaydi
-#    (masalan ustun nomini o'zgartirishni drop+add deb tushunishi mumkin)
-
-# 3. migratsiyani qo'llash
 alembic upgrade head
 ```
 
-Boshqa foydali buyruqlar:
+### 6. Birinchi admin hisobini yaratish
 
 ```bash
-alembic current          # baza hozir qaysi migratsiyada turibdi
-alembic history           # barcha migratsiyalar zanjiri
-alembic downgrade -1      # oxirgi migratsiyani orqaga qaytarish
-alembic check              # models.py bilan oxirgi migratsiya orasida farq bormi
+python create_users.py
 ```
 
-Migratsiya qaysi bazaga tegishli ekanini `alembic/env.py` loyihaning
-o'zidagi `database.py`dan (demak `.env`dagi `DATABASE_URL`dan) o'qiydi —
-alembic.ini yoki env.py'da baza manzilini qo'lda yozish shart emas. Ya'ni
-`alembic upgrade head` development'da SQLite'ga, `.env`da
-`DATABASE_URL=postgresql+psycopg2://...` o'rnatilgan production'da esa
-avtomatik PostgreSQL'ga ishlaydi.
-
-**Yangi (bo'sh) baza bilan ishga tushirish** (production'dagi birinchi
-deploy) quyidagicha bo'ladi:
+### 7. Ilovani ishga tushirish
 
 ```bash
-alembic upgrade head     # bo'sh, lekin to'liq schema yaratiladi
-python create_users.py   # birinchi admin hisobini yaratish
+# Development
+python main.py
+# yoki
+uvicorn main:app --reload
+
+# Production
+gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-## Loyiha strukturasi
+Brauzerda `http://127.0.0.1:8000` oching.
+
+---
+
+## 📁 Loyiha tuzilishi
 
 ```
 MedFlow/
-├── database.py            # SQLAlchemy engine & session (.env orqali sozlanadi)
-├── models.py               # ORM modellar: User, Doctor, Patient, Appointment,
-│                             Payment, LabResult, AuditLog + state-machine
-├── schemas.py                # Pydantic v2 sxemalar
-├── auth.py                    # Parol xeshlash + signed-cookie sessiya + rol dependency
-├── audit.py                    # Audit jurnal yozish yordamchisi
-├── rate_limiter.py               # slowapi Limiter (brute-force himoyasi)
-├── lab_templates.py                # 20 ta standart tahlil shabloni (ko'rsatkichlar, me'yorlar)
-├── main.py                          # FastAPI kirish nuqtasi + dinamik modul dvigateli + GUI
-├── create_users.py                      # Foydalanuvchilarni boshqarish: qo'shish/yangilash, ro'yxat, o'chirish
-├── migrate_passwords.py                   # Parol xeshlash migratsiyasi (audit skript)
-├── backup_sqlite.py                         # SQLite backup skripti
-├── rotate_keys.py                             # Shifrlash kalitlarini rotatsiya qilish
-├── .env.example                                # Namuna environment fayli
-├── deploy/                                        # Production shablonlari
-│   ├── clinicflow.service.example                   # systemd xizmat fayli
-│   ├── nginx_clinicflow.conf.example                  # Nginx reverse-proxy
-│   └── backup_postgres.sh.example                       # PostgreSQL backup
-├── modules/
-│   ├── auth_module.py    # /api/auth/login, /logout, /me, admin-reset-password
-│   ├── patients.py        # Bemorlar CRUD + moliyaviy hisob (compute_financials)
-│   ├── doctors.py          # Shifokorlar CRUD + narxnoma
-│   ├── appointments.py      # Band qilish, holat state-machine, bekor qilish
-│   ├── payments.py           # To'lov + qaytarim + CSV eksport
-│   ├── lab_results.py         # Tahlil natijalari: qo'shish, tahrirlash, o'chirish
-│   ├── audit_module.py         # Audit jurnalni ko'rish API (admin)
-│   └── dashboard.py             # Bugungi/jami KPI + jonli navbat
-└── templates/
-    ├── base.html, login.html, dashboard.html
-    ├── patients.html, patient_detail.html         # Bemorlar ro'yxati + to'liq kartochka
-    ├── doctors.html, doctor_detail.html            # Shifokorlar ro'yxati + kartochka
-    ├── appointments.html, payments.html
-    ├── lab_results.html                              # Tahlil natijalari ro'yxati
-    ├── reports.html
-    └── audit_log.html                                  # Audit jurnal sahifasi (admin)
+├── main.py                    # FastAPI kirish nuqtasi
+├── models.py                  # SQLAlchemy ORM modellar
+├── schemas.py                 # Pydantic v2 sxemalar
+├── database.py                # DB engine & session
+├── auth.py                    # Autentifikatsiya va avtorizatsiya
+├── audit.py                   # Audit jurnal yordamchisi
+├── rate_limiter.py            # Brute-force himoyasi
+├── lab_templates.py           # 20 ta tahlil shabloni
+├── crypto_fields.py           # Maydon shifrlash
+├── create_users.py            # Foydalanuvchi yaratish skripti
+├── backup_manager.py          # Zaxira nusxa boshqaruvi
+├── reminder_service.py        # Telegram eslatmalar xizmati
+├── eskiz_client.py            # SMS xizmati integratsiyasi
+├── .env.example               # Muhit o‘zgaruvchilari namunasi
+│
+├── modules/                   # Modullar (avtomatik yuklanadi)
+│   ├── auth_module.py         # Login/logout/parol boshqaruvi
+│   ├── patients.py            # Bemorlar CRUD
+│   ├── doctors.py             # Shifokorlar CRUD
+│   ├── appointments.py        # Qabullar va state-machine
+│   ├── payments.py            # To‘lovlar va qaytarimlar
+│   ├── lab_results.py         # Tahlil natijalari
+│   ├── dashboard.py           # Dashboard ma'lumotlari
+│   ├── reports.py             # Hisobotlar
+│   ├── audit_module.py        # Audit jurnal API
+│   ├── security_center.py     # Xavfsizlik markazi
+│   ├── settings_module.py     # Tizim sozlamalari
+│   ├── admin_profile.py       # Klinika profili
+│   ├── gov_integration.py     # Davlat tizimi integratsiyasi
+│   └── patient_portal.py      # Bemor portali (FAZA 2)
+│
+├── templates/                 # Jinja2 HTML shablonlar
+│   ├── base.html              # Asosiy shablon (sidebar, modal)
+│   ├── login.html             # Kirish sahifasi
+│   ├── dashboard.html         # Boshqaruv paneli
+│   ├── patients.html          # Bemorlar ro‘yxati
+│   ├── patient_detail.html    # Bemor kartochkasi (tab'lar)
+│   ├── doctors.html           # Shifokorlar
+│   ├── doctor_detail.html     # Shifokor kartochkasi
+│   ├── appointments.html      # Qabullar
+│   ├── payments.html          # To‘lovlar
+│   ├── lab_results.html       # Tahlil natijalari
+│   ├── reports.html           # Hisobotlar
+│   ├── users.html             # Xodimlar boshqaruvi
+│   ├── audit_log.html         # Audit jurnali
+│   ├── backup.html            # Zaxira nusxa
+│   ├── profile.html           # Sozlamalar
+│   └── errors/                # Xato sahifalari (403, 404, 500)
+│
+├── static/                    # Statik fayllar
+│   ├── css/theme.css          # CSS o‘zgaruvchilar (dark/light)
+│   └── uploads/               # Yuklangan rasmlar
+│       ├── patients/
+│       └── doctors/
+│
+├── alembic/                   # DB migratsiyalari
+├── deploy/                    # Production shablonlar
+│   ├── clinicflow.service.example    # systemd
+│   ├── nginx_clinicflow.conf.example # Nginx konfiguratsiyasi
+│   └── backup_postgres.sh.example    # PostgreSQL zaxira
+│
+└── tests/                     # Testlar (pytest)
 ```
 
-## Bemor kartochkasi (`/patients/{id}`) — sinxron ma'lumot
+---
 
-Bemor ismiga bosilganda ochiladigan sahifada uch bo'lim bir manbadan
-(bazadan) real vaqtda o'qiladi, shu sababli har doim sinxron:
+## 👤 Rollar va ruxsatlar
 
-1. **Qabullar tarixi** — qaysi shifokorda, qachon, qanday narxda,
-   qarzi qancha, holati (kutmoqda/jarayonda/yakunlandi/bekor va h.k.).
-2. **To'lovlar tarixi** — har bir to'lov, qaysi qabulga tegishli
-   ekani, qaytarilgan bo'lsa shu belgi bilan.
-3. **Tahlil natijalari** — shu bemorga tegishli barcha lab tahlillari;
-   "Batafsil" tugmasi bosilsa har bir ko'rsatkich, me'yoriy oraliq va
-   bayroq (past/yuqori/me'yorda) ko'rsatiluvchi oyna ochiladi — bu xuddi
-   `/lab-results/` sahifasidagi ma'lumot bilan bir xil, chunki ikkalasi
-   ham bitta `LabResult` jadvalidan o'qiydi.
+| Rol | Bemorlar | Qabullar | Shifokorlar | To‘lovlar | Tahlillar | Hisobotlar | Xodimlar | Audit |
+|-----|:--------:|:--------:|:-----------:|:---------:|:---------:|:----------:|:--------:|:-----:|
+| **Admin** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Reception** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Doctor** | 👁️ | 👁️ | 👁️ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Cashier** | 👁️ | 👁️ | 👁️ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Lab Doctor** | 👁️ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Assistant Admin** | 👁️ | 👁️ | ❌ | ❌ | ❌ | 👁️ | 👁️ | 👁️ |
 
-## Production uchun
+> ✅ — to‘liq CRUD  |  👁️ — faqat ko‘rish  |  ❌ — ruxsat yo‘q
 
-- **`.env` fayli**: `database.py` ishga tushganda avtomatik yuklaydi
-  (`python-dotenv`). `.env.example`ni nusxalab, o'zingiznikini to'ldiring.
-- **PostgreSQL'ga o'tish**: `.env`da `DATABASE_URL`ni
-  `postgresql+psycopg2://user:parol@host:5432/dbname` ga o'zgartiring va
-  `pip install psycopg2-binary` qiling.
-- **Backup**: `python backup_sqlite.py` (SQLite) yoki
-  `deploy/backup_postgres.sh.example` (PostgreSQL) — kunlik cron/Task
-  Scheduler orqali avtomatlashtirish tavsiya etiladi.
-- **Deployment**: `deploy/clinicflow.service.example` (systemd) va
-  `deploy/nginx_clinicflow.conf.example` (reverse-proxy + TLS).
-- **Schema migratsiyalari**: hozircha `Base.metadata.create_all`
-  ishlatiladi (yangi jadval yaratadi, lekin mavjud jadvalni xavfsiz
-  o'zgartirmaydi). Modelga yangi ustun qo'shilsa va production
-  ma'lumoti bo'lsa, `alembic` bilan haqiqiy migratsiya qo'shish tavsiya
-  etiladi.
+---
 
-**Eslatma:** `CLINICFLOW_SECRET_KEY` muhit o'zgaruvchisi (yoki `.env`
-fayli) orqali production uchun albatta belgilanishi kerak — bo'sh
-bo'lsa dastur ishga tushmaydi.
+## 🔒 Xavfsizlik
 
-### Ko'p-worker (gunicorn `--workers N > 1`) rejimi — Redis tavsiya etiladi
+- **Parol xeshlash:** PBKDF2 (salt + 100,000 iterations)
+- **Maydon shifrlash:** AES-256-GCM (telefon, manzil, tibbiy eslatmalar, PINFL, pasport)
+- **Blind Index:** Shifrlangan maydonlar bo‘yicha qidiruv/dublikat tekshiruvi
+- **Sessiya:** Signed cookie (Fernet) + 8 soatlik muddati
+- **Rate Limiting:** Login uchun brute-force himoyasi (slowapi)
+- **CSP Headers:** Content Security Policy, X-Frame-Options, XSS Protection
+- **Audit:** Har bir yozuvchi amal (qo'shish/o'zgartirish/o'chirish) jurnalga yoziladi
+- **2-qatlam parol:** Xavfli amallar (bazani tozalash, tizimni qayta ishga tushirish) uchun alohida parol
+- **Inactivity Timer:** 15 daqiqa harakatsizlikdan so‘ng avtomatik chiqish
 
-Bitta worker bilan (`python main.py` yoki `gunicorn --workers 1`)
-hech narsa qo'shimcha sozlash shart emas. Lekin production'da bir
-nechta worker (masalan `gunicorn main:app --workers 4 ...`) ishlatilsa,
-ikkita joyda worker-ichida (in-memory) saqlanadigan holat bor edi:
+---
 
-- **`auth.py`dagi foydalanuvchi keshi** — admin parol/rolni
-  o'zgartirganda, `clear_user_cache()` faqat o'sha so'rovni qabul
-  qilgan workerda ishlaydi; qolgan workerlar eski ma'lumotni
-  `CLINICFLOW_USER_CACHE_TTL_SECONDS` (standart 60s) gacha ishlatishda
-  davom etishi mumkin.
-- **`rate_limiter.py`dagi `/login` brute-force cheklovi** — har bir
-  worker o'z hisoblagichini alohida yuritadi, shuning uchun amaldagi
-  limit worker soniga bo'linib zaiflashadi (masalan 4 worker ≈ 4x
-  zaifroq himoya).
+## 📚 API hujjatlari
 
-**Yechim:** `.env`da `CLINICFLOW_REDIS_URL`ni sozlang (masalan
-`redis://localhost:6379/0`) va `pip install redis` qiling — ikkalasi
-ham avtomatik ravishda markazlashgan Redis backend'iga o'tadi (kesh
-tozalash barcha workerlarga darhol ta'sir qiladi, rate-limit hisoblagich
-umumiy bo'ladi). Sozlanmasa, ilova baribir ishlaydi, lekin yuqoridagi
-xavf saqlanib qoladi — bu holatda dastur ishga tushishda log'ga aniq
-ogohlantirish yozadi.
+Development rejimida avtomatik hujjatlar mavjud:
+
+- **Swagger UI:** `http://127.0.0.1:8000/docs`
+- **ReDoc:** `http://127.0.0.1:8000/redoc`
+- **OpenAPI JSON:** `http://127.0.0.1:8000/openapi.json`
+
+> Production'da (`ENV=production`) ushbu yo'llar o'chiriladi.
+
+---
+
+## 🖼️ Ekran tasvirlari
+
+| Sahifa | Tavsif |
+|--------|--------|
+| **Dashboard** | KPI kartochkalari, jonli navbat, bugungi statistika |
+| **Bemorlar** | Ro‘yxat, qidiruv, filtrlash, yangi bemor qo‘shish |
+| **Bemor kartochkasi** | Tab'lar: Umumiy, Tibbiy tarix, Davolanishlar, Tashriflar, Tahlillar, To‘lovlar |
+| **Qabullar** | Holat boshqaruvi (dropdown), to‘lov qabul qilish, vaqtini ko‘chirish |
+| **To‘lovlar** | CSV eksport, qaytarim boshqaruvi |
+| **Tahlillar** | 20 ta shablon, avtomatik me‘yor tekshiruvi, batafsil ko‘rish |
+| **Hisobotlar** | Shifokor samaradorligi, soatlik yuklama, bekor qilish sabablari |
+
+---
+
+## 🧪 Testlarni ishga tushirish
+
+```bash
+pytest tests/ -v
+```
+
+---
+
+## 📝 Migratsiyalar
+
+Schema o‘zgarishlari Alembic orqali boshqariladi:
+
+```bash
+# Yangi migratsiya yaratish
+alembic revision --autogenerate -m "yangi ustun qo‘shildi"
+
+# Migratsiyani qo‘llash
+alembic upgrade head
+
+# Oxirgi migratsiyani bekor qilish
+alembic downgrade -1
+
+# Joriy holatni tekshirish
+alembic current
+```
+
+---
+
+## 🤝 Hissa qo'shish
+
+1. Fork qiling
+2. Yangi branch yarating (`git checkout -b feature/yangi-funksiya`)
+3. O'zgarishlarni kiritib commit qiling (`git commit -am 'Yangi funksiya qo‘shildi'`)
+4. Push qiling (`git push origin feature/yangi-funksiya`)
+5. Pull Request yarating
+
+---
+
+## 📄 Litsenziya
+
+Ushbu loyiha [MIT](LICENSE) litsenziyasi ostida tarqatiladi.
+
+---
+
+> **Eslatma:** `.env` faylidagi `CLINICFLOW_SECRET_KEY` va shifrlash kalitlari production uchun albatta kuchli va noyob bo‘lishi kerak. Kalitlarni hech qachon ochiq repozitoriyga qo‘ymang!
+
+---
+
+**Muallif:** [Aziko29](https://github.com/Aziko29)  
+**Versiya:** 3.0.0  
+**Oxirgi yangilanish:** 2026
