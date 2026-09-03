@@ -1,13 +1,73 @@
 <!-- templates/appointments.html -->
 {% extends "base.html" %}
+{% from "_pagination.html" import sort_th, pagination_nav %}
 
 {% block title %}Qabul{% endblock %}
 
+{% from "_breadcrumb.html" import breadcrumb %}
+
+{% block extra_style %}
+/* Prompt 26/1: Kalendar ko'rinishi (haftalik/kunlik, CSS Grid) */
+.view-toggle { display: flex; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+.view-toggle button {
+    padding: 9px 14px; border: none; background: var(--input-bg); color: var(--text-secondary);
+    font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+.view-toggle button.active { background: var(--accent-color); color: #05070d; }
+.view-toggle button + button { border-left: 1px solid var(--border-color); }
+
+.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.calendar-nav { display: flex; align-items: center; gap: 8px; }
+.calendar-range-label { font-weight: 700; font-size: 15px; min-width: 180px; text-align: center; }
+.calendar-mode-toggle { display: flex; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+.calendar-mode-toggle button { padding: 8px 12px; border: none; background: var(--input-bg); color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.calendar-mode-toggle button.active { background: var(--accent-color); color: #05070d; }
+.calendar-mode-toggle button + button { border-left: 1px solid var(--border-color); }
+
+.calendar-grid-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px; position: relative; }
+.calendar-grid {
+    display: grid;
+    grid-template-columns: 64px repeat(var(--cal-days, 7), minmax(130px, 1fr));
+    min-width: 700px;
+}
+.cal-corner, .cal-day-head, .cal-time-label, .cal-cell {
+    border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color);
+}
+.cal-corner { position: sticky; top: 0; left: 0; z-index: 3; background: var(--table-header-bg); }
+.cal-day-head {
+    position: sticky; top: 0; z-index: 2; background: var(--table-header-bg); color: var(--text-secondary);
+    padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.cal-day-head.today { color: var(--accent-color); }
+.cal-time-label {
+    position: sticky; left: 0; background: var(--bg-secondary); color: var(--text-muted);
+    font-size: 11px; padding: 4px 8px; text-align: right; white-space: nowrap;
+}
+.cal-cell { position: relative; min-height: 46px; padding: 2px; }
+.cal-cell.today-col { background: color-mix(in srgb, var(--accent-color) 5%, transparent); }
+.cal-event {
+    display: block; border-radius: 4px; padding: 3px 6px; margin-bottom: 2px; font-size: 11px; line-height: 1.35;
+    text-decoration: none; color: inherit; cursor: pointer; border-left: 3px solid currentColor; overflow: hidden;
+}
+.cal-event-title { font-weight: 700; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event-sub { display: block; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-empty-hint { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+{% endblock %}
+
 {% block content %}
+{{ breadcrumb([("Bosh sahifa", "/dashboard"), ("Qabul", none)]) }}
 <div class="header-container">
     <div class="header-title"><h1>Qabul (Navbatlar)</h1></div>
     <div class="header-actions">
-        <div class="table-search">
+        <div class="view-toggle">
+            <button type="button" id="viewToggleList" class="active" onclick="switchAppointmentsView('list')">
+                <i class="fa-solid fa-list"></i> Ro'yxat
+            </button>
+            <button type="button" id="viewToggleCalendar" onclick="switchAppointmentsView('calendar')">
+                <i class="fa-solid fa-calendar-days"></i> Kalendar
+            </button>
+        </div>
+        <div class="table-search" id="appointmentsListSearch">
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="text" placeholder="Bemor yoki shifokor bo'yicha qidirish..." oninput="filterTable(this, 'appointmentsTableBody')">
         </div>
@@ -19,10 +79,18 @@
     </div>
 </div>
 
-<div class="data-section">
-    <table class="content-table">
+<div class="data-section" id="appointmentsListView">
+    <table class="content-table" id="appointmentsTable" data-sort-by="{{ sort_by }}" data-sort-order="{{ sort_order }}">
         <thead>
-            <tr><th>ID</th><th>Bemor</th><th>Shifokor</th><th>Vaqt</th><th>Narx</th><th>Qarz</th><th>Holat</th><th>Amallar</th></tr>
+            <tr>
+                {{ sort_th(request, 'ID', 'id', sort_by, sort_order) }}
+                <th>Bemor</th><th>Shifokor</th>
+                {{ sort_th(request, 'Vaqt', 'scheduled_time', sort_by, sort_order) }}
+                {{ sort_th(request, 'Narx', 'price', sort_by, sort_order) }}
+                <th>Qarz</th>
+                {{ sort_th(request, 'Holat', 'status', sort_by, sort_order) }}
+                <th>Amallar</th>
+            </tr>
         </thead>
         <tbody id="appointmentsTableBody">
             {% for appt in appointments %}
@@ -77,5 +145,162 @@
             {% endfor %}
         </tbody>
     </table>
+    <div id="appointmentsPaginationNav">{{ pagination_nav(request, page, total_pages, total) }}</div>
 </div>
+
+<div class="data-section" id="appointmentsCalendarView" style="display:none;">
+    <div class="calendar-toolbar">
+        <div class="calendar-nav">
+            <button class="btn-icon-sm" title="Oldingi" onclick="calendarNav(-1)"><i class="fa-solid fa-chevron-left"></i></button>
+            <button class="btn-secondary-action" onclick="calendarGoToday()">Bugun</button>
+            <button class="btn-icon-sm" title="Keyingi" onclick="calendarNav(1)"><i class="fa-solid fa-chevron-right"></i></button>
+            <span class="calendar-range-label" id="calendarRangeLabel"></span>
+        </div>
+        <div class="calendar-mode-toggle">
+            <button type="button" id="calModeDay" onclick="calendarSetMode('day')">Kun</button>
+            <button type="button" id="calModeWeek" class="active" onclick="calendarSetMode('week')">Hafta</button>
+        </div>
+    </div>
+    <div class="calendar-grid-wrap">
+        <div class="calendar-grid" id="calendarGrid"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+// Prompt 26/1: Qabullar — Kalendar ko'rinishi (CSS Grid, haftalik/kunlik).
+// Ro'yxat va kalendar bir xil ma'lumot manbasidan (mavjud
+// /api/appointments/list, Prompt 24) foydalanadi — kalendar tanlangan
+// kun/hafta oralig'idagi barcha qabullarni olish uchun katta page_size
+// bilan so'rov yuboradi, so'ng vaqt oralig'i bo'yicha o'zi filtrlaydi
+// (backend'da alohida sana-oralig'i parametri hali yo'q).
+const CALENDAR_START_HOUR = 8;
+const CALENDAR_END_HOUR = 20; // ko'rinadigan oxirgi soat (chegara, ochiq)
+const CALENDAR_STATUS_COLOR = {
+    waiting: 'var(--warning-color)', in_progress: 'var(--accent-color)',
+    delayed: 'var(--accent-secondary)', completed: 'var(--success-color)',
+    cancelled: 'var(--text-muted)', no_show: 'var(--warning-color)',
+};
+const calendarState = { mode: 'week', anchor: new Date() };
+
+function switchAppointmentsView(view) {
+    const isCalendar = view === 'calendar';
+    document.getElementById('appointmentsListView').style.display = isCalendar ? 'none' : '';
+    document.getElementById('appointmentsCalendarView').style.display = isCalendar ? '' : 'none';
+    document.getElementById('appointmentsListSearch').style.display = isCalendar ? 'none' : '';
+    document.getElementById('viewToggleList').classList.toggle('active', !isCalendar);
+    document.getElementById('viewToggleCalendar').classList.toggle('active', isCalendar);
+    if (isCalendar) calendarRender();
+}
+
+function calendarSetMode(mode) {
+    calendarState.mode = mode;
+    document.getElementById('calModeDay').classList.toggle('active', mode === 'day');
+    document.getElementById('calModeWeek').classList.toggle('active', mode === 'week');
+    calendarRender();
+}
+
+function calendarNav(delta) {
+    const days = calendarState.mode === 'week' ? 7 : 1;
+    calendarState.anchor.setDate(calendarState.anchor.getDate() + delta * days);
+    calendarRender();
+}
+
+function calendarGoToday() {
+    calendarState.anchor = new Date();
+    calendarRender();
+}
+
+function calendarWeekStart(d) {
+    const day = d.getDay(); // 0=Yak ... 6=Shan
+    const diff = (day === 0 ? -6 : 1) - day; // Dushanbadan boshlanadi
+    const start = new Date(d);
+    start.setDate(d.getDate() + diff);
+    start.setHours(0, 0, 0, 0);
+    return start;
+}
+function calendarSameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function calendarFmtDate(d) {
+    const p = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function calendarDays() {
+    const start = calendarWeekStart(calendarState.anchor);
+    return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        return d;
+    });
+}
+
+function calendarRenderRangeLabel(days) {
+    const label = document.getElementById('calendarRangeLabel');
+    const fmt = (d) => `${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+    label.textContent = days.length === 1 ? fmt(days[0]) : `${fmt(days[0])} — ${fmt(days[days.length - 1])}`;
+}
+
+async function calendarRender() {
+    const days = calendarState.mode === 'week' ? calendarDays() : [new Date(calendarState.anchor)];
+    calendarRenderRangeLabel(days);
+    const grid = document.getElementById('calendarGrid');
+    grid.style.setProperty('--cal-days', days.length);
+
+    // Skeleton — soat setkasi (bosh ustun + kun sarlavhalari), so'ng ma'lumot yuklanadi.
+    let html = `<div class="cal-corner"></div>`;
+    const today = new Date();
+    const dayLabels = ['Yak','Dush','Sesh','Chor','Pay','Jum','Shan'];
+    days.forEach((d) => {
+        html += `<div class="cal-day-head${calendarSameDay(d, today) ? ' today' : ''}">${dayLabels[d.getDay()]}<br>${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}</div>`;
+    });
+    for (let h = CALENDAR_START_HOUR; h < CALENDAR_END_HOUR; h++) {
+        html += `<div class="cal-time-label">${String(h).padStart(2,'0')}:00</div>`;
+        days.forEach((d) => {
+            html += `<div class="cal-cell${calendarSameDay(d, today) ? ' today-col' : ''}" data-date="${calendarFmtDate(d)}" data-hour="${h}"></div>`;
+        });
+    }
+    grid.innerHTML = html;
+
+    let items = [];
+    try {
+        const res = await fetch('/api/appointments/list?sort_by=scheduled_time&sort_order=asc&page=1&page_size=200', { credentials: 'same-origin' });
+        if (res.ok) items = (await res.json()).items || [];
+    } catch (err) {
+        console.error("Kalendar ma'lumotini olishda xatolik:", err);
+    }
+
+    const rangeStart = days[0];
+    const rangeEnd = new Date(days[days.length - 1]);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    let placed = 0;
+    items.forEach((a) => {
+        const t = new Date(a.scheduled_time);
+        if (t < rangeStart || t >= rangeEnd) return;
+        const cell = grid.querySelector(`.cal-cell[data-date="${calendarFmtDate(t)}"][data-hour="${t.getHours()}"]`);
+        if (!cell) return; // ko'rinadigan soat oralig'idan tashqarida (masalan tungi vaqt)
+        const color = CALENDAR_STATUS_COLOR[a.status] || 'var(--text-secondary)';
+        const ev = document.createElement('a');
+        ev.className = 'cal-event';
+        ev.href = `/patients/${a.patient_id}`;
+        ev.style.background = `color-mix(in srgb, ${color} 16%, transparent)`;
+        ev.style.color = color;
+        ev.title = `${a.patient_name} — ${a.doctor_name} (${a.status})`;
+        const hh = String(t.getHours()).padStart(2, '0');
+        const mm = String(t.getMinutes()).padStart(2, '0');
+        ev.innerHTML = `<span class="cal-event-title">${hh}:${mm} ${escapeHtml(a.patient_name)}</span><span class="cal-event-sub">${escapeHtml(a.doctor_name)}</span>`;
+        cell.appendChild(ev);
+        placed += 1;
+    });
+    const wrap = grid.parentElement;
+    const prevHint = wrap.querySelector('.calendar-empty-hint');
+    if (prevHint) prevHint.remove();
+    if (placed === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'calendar-empty-hint';
+        hint.textContent = "Bu davrda qabullar yo'q";
+        wrap.appendChild(hint);
+    }
+}
 {% endblock %}

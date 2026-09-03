@@ -19,7 +19,7 @@ import io
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 import models
@@ -36,6 +36,49 @@ router = APIRouter(
     # bilan izchil.
     dependencies=[Depends(require_admin_or_assistant())],
 )
+
+# ═══════════════════════════════════════════════════════════════════
+# 🩺 Prompt 12 — N+1 SO'ROV AUDITI (shu fayl bo'yicha)
+# ═══════════════════════════════════════════════════════════════════
+# `get_doctor_performance` (pastda) tuzatilgan asosiy N+1 edi: har bir
+# faol shifokor uchun alohida `db.query(Appointment).filter(doctor_id=...)`
+# — endi bitta LEFT JOIN + GROUP BY aggregat so'rovga aylantirildi.
+#
+# Fayldagi qolgan funksiyalar skanerlandi, natija:
+#
+#   1) `get_period_trend` — HAQIQIY, LEKIN CHEGARALANGAN N+1 pattern.
+#      Har bir oy (`month_pairs`, default `months=6`) uchun alohida
+#      `db.query(Appointment).filter(scheduled_time BETWEEN ...).all()`
+#      yuboriladi — N oy = N so'rov. get_doctor_performance'dagi bilan
+#      BIR XIL sinf (siklda so'rov). Farqi: N bu yerda so'rov
+#      parametridan (`months`, standart 6) kelib chiqadi, foydalanuvchi
+#      ma'lumotlar sonidan (masalan shifokorlar soni yuzlab bo'lishi
+#      mumkin) emas — shuning uchun get_doctor_performance'dan farqli
+#      o'laroq YUQORI USTUVORLIK emas, lekin xuddi shu
+#      `func.sum(case(...))` + har oy uchun bitta guruh (masalan
+#      `func.strftime('%Y-%m', scheduled_time)` bo'yicha GROUP BY)
+#      naqshi bilan kelajakda bitta so'rovga tushirilishi mumkin.
+#      (Bu Prompt doirasida o'zgartirilmadi — vazifa faqat
+#      get_doctor_performance'ni so'radi, lekin keyingi optimallashtirish
+#      uchun shu yerda qayd etib qo'yildi.)
+#
+#   2) `get_status_breakdown`, `get_hourly_load`, `get_weekday_load`,
+#      `get_cancel_reasons` — bular N+1 EMAS (har biri davr ichidagi
+#      BARCHA appointmentlarni BITTA so'rovda oladi), lekin boshqa turdagi
+#      samarasizlik bor: agregatsiya (guruhlash/sanash) SQL'da emas,
+#      Python tsiklida bajariladi — katta davr/ko'p yozuv holida
+#      keraksiz ko'p qatorni xotiraga yuklaydi. Bu N+1 emas (so'rovlar
+#      soni ma'lumotlar hajmiga bog'liq emas), shuning uchun ushbu
+#      Prompt talabiga (N+1) to'g'ridan-to'g'ri kirmaydi — lekin
+#      kelajakda `func.count`/`GROUP BY` bilan SQL darajasida
+#      agregatsiyaga o'tkazish mumkin.
+#
+#   3) `get_patient_retention` — ALLAQACHON to'g'ri optimallashtirilgan
+#      (funksiya ichidagi izohda aytilganidek): patient_id'lar ro'yxati
+#      bitta so'rovda, "eng birinchi appointment" esa HAR bir bemor
+#      uchun alohida emas, bitta GROUP BY so'rovda olinadi. Bu yerda
+#      hech narsa o'zgartirilmadi.
+# ═══════════════════════════════════════════════════════════════════
 
 
 def parse_date_range(
@@ -205,56 +248,77 @@ def get_doctor_performance(
     Davrda umuman qabul qilmagan faol shifokor ham ro'yxatda bo'ladi,
     barcha sonlar 0 bilan — front-end alohida "yo'q" holatni ishlamasin
     deb (get_status_breakdown bilan bir xil naqsh).
+
+    🩺 Prompt 12 — N+1 tuzatildi: avval bu yerda HAR BIR faol shifokor
+    uchun alohida `db.query(models.Appointment).filter(doctor_id=...)`
+    so'rovi yuborilardi (N shifokor = N+1 so'rov: 1 ta shifokorlar
+    ro'yxati + N ta appointment so'rovi). Endi BITTA aggregat so'rov:
+    `Doctor`dan `Appointment`ga LEFT OUTER JOIN (davr filtri ustuvor
+    ravishda JOIN'ning ON shartiga qo'yiladi, WHERE'ga emas — aks holda
+    LEFT JOIN o'rniga amalda INNER JOIN bo'lib qolib, davrda umuman
+    qabul qilmagan faol shifokorlar natijadan tushib qolar edi), so'ng
+    `func.count`/`func.sum(case(...))` bilan har bir shifokor uchun
+    kerakli sonlar bitta GROUP BY so'rovda hisoblanadi.
     """
-    active_doctors = (
-        db.query(models.Doctor).filter(models.Doctor.is_active.is_(True)).all()
+    period_join_condition = and_(
+        models.Appointment.doctor_id == models.Doctor.id,
+        models.Appointment.scheduled_time >= start,
+        models.Appointment.scheduled_time <= end,
     )
 
-    rows: List[schemas.DoctorPerformanceRow] = []
-    for doctor in active_doctors:
-        appointments = (
-            db.query(models.Appointment)
-            .filter(
-                models.Appointment.doctor_id == doctor.id,
-                models.Appointment.scheduled_time >= start,
-                models.Appointment.scheduled_time <= end,
-            )
-            .all()
+    rows = (
+        db.query(
+            models.Doctor.id.label("doctor_id"),
+            models.Doctor.fullname.label("doctor_name"),
+            models.Doctor.specialty.label("specialty"),
+            # Appointment.id LEFT JOIN'da mos qabul topilmasa NULL
+            # bo'ladi — func.count() NULL'larni sanamaydi, shuning
+            # uchun qabuli yo'q shifokor uchun to'g'ri 0 chiqadi.
+            func.count(models.Appointment.id).label("total"),
+            func.sum(
+                case((models.Appointment.status == "completed", 1), else_=0)
+            ).label("completed"),
+            func.sum(
+                case((models.Appointment.status == "cancelled", 1), else_=0)
+            ).label("cancelled"),
+            func.sum(
+                case((models.Appointment.status == "delayed", 1), else_=0)
+            ).label("delayed"),
+            func.sum(
+                case((models.Appointment.status == "no_show", 1), else_=0)
+            ).label("no_show"),
+            func.sum(
+                case(
+                    (models.Appointment.status == "completed", models.Appointment.price),
+                    else_=0,
+                )
+            ).label("revenue"),
         )
+        .outerjoin(models.Appointment, period_join_condition)
+        .filter(models.Doctor.is_active.is_(True))
+        .group_by(models.Doctor.id, models.Doctor.fullname, models.Doctor.specialty)
+        .all()
+    )
 
-        total = len(appointments)
-        completed = 0
-        cancelled = 0
-        delayed = 0
-        no_show = 0
-        revenue = 0
-        for appt in appointments:
-            if appt.status == "completed":
-                completed += 1
-                revenue += appt.price
-            elif appt.status == "cancelled":
-                cancelled += 1
-            elif appt.status == "delayed":
-                delayed += 1
-            elif appt.status == "no_show":
-                no_show += 1
-
-        rows.append(
-            schemas.DoctorPerformanceRow(
-                doctor_id=doctor.id,
-                doctor_name=doctor.fullname,
-                specialty=doctor.specialty,
-                total=total,
-                completed=completed,
-                cancelled=cancelled,
-                delayed=delayed,
-                no_show=no_show,
-                revenue=revenue,
-            )
+    result = [
+        schemas.DoctorPerformanceRow(
+            doctor_id=row.doctor_id,
+            doctor_name=row.doctor_name,
+            specialty=row.specialty,
+            # SUM() bo'sh guruh (qabuli yo'q shifokor) uchun SQL
+            # darajasida NULL qaytaradi — Python tomonida 0'ga
+            # normallashtiriladi.
+            total=row.total or 0,
+            completed=row.completed or 0,
+            cancelled=row.cancelled or 0,
+            delayed=row.delayed or 0,
+            no_show=row.no_show or 0,
+            revenue=row.revenue or 0,
         )
-
-    rows.sort(key=lambda row: row.total, reverse=True)
-    return rows
+        for row in rows
+    ]
+    result.sort(key=lambda row: row.total, reverse=True)
+    return result
 
 
 @router.get("/doctor-performance", response_model=List[schemas.DoctorPerformanceRow])

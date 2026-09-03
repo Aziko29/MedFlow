@@ -76,7 +76,7 @@ def _get_settings(db: Session) -> models.GovIntegrationSettings:
         settings = models.GovIntegrationSettings(
             integration_name="OneID",
             is_enabled=False,
-            created_at=datetime.datetime.utcnow(),
+            created_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
         )
         db.add(settings)
         db.commit()
@@ -247,7 +247,7 @@ def update_gov_integration_settings(
             detail="Integratsiyani yoqish uchun avval api_url va api_key kiritilishi kerak",
         )
 
-    settings.updated_at = datetime.datetime.utcnow()
+    settings.updated_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(settings)
 

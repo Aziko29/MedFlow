@@ -27,9 +27,11 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from audit import log_action
+from model_utils import apply_update
 from auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
+    LOGIN_LOCKOUT_MINUTES,
     create_session_token,
     get_current_user,
     get_current_user_optional,
@@ -40,6 +42,10 @@ from auth import (
     require_role,
     require_admin_or_assistant,
     verify_password,
+    is_account_locked,
+    account_lock_remaining_seconds,
+    register_failed_login,
+    register_successful_login,
 )
 from database import get_db
 
@@ -52,7 +58,7 @@ from database import get_db
 # (batafsil: rate_limiter.py'dagi izohga qarang).
 from rate_limiter import limiter
 from models import SELF_PASSWORD_CHANGE_LIMIT
-from modules.security_center import record_login_attempt
+from modules.security_center import record_login_attempt, record_forgot_password_request
 
 # ⬅️ YANGI (2-band, 2.3): production'da cookie faqat HTTPS orqali
 # yuborilishi (`secure=True`) uchun.
@@ -73,6 +79,29 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 # ==============================================
 # LOGIN - OPTIMALLASHTIRILGAN
 # ==============================================
+
+def _locked_account_detail(user: models.User) -> str:
+    """Hisob HOZIR bloklangan bo'lsa (avvalgi urinishlar tufayli)
+    ko'rsatiladigan aniq xabar — necha daqiqadan so'ng qayta urinish
+    mumkinligini ham aytadi."""
+    remaining_minutes = max(1, (account_lock_remaining_seconds(user) + 59) // 60)
+    return (
+        f"Hisobingiz ko'p marta noto'g'ri parol kiritilgani sababli vaqtincha "
+        f"bloklandi. Iltimos, {remaining_minutes} daqiqadan so'ng qayta urinib "
+        "ko'ring yoki administrator bilan bog'laning."
+    )
+
+
+def _just_locked_detail() -> str:
+    """Aynan SHU (limitni to'ldirgan) urinishda hisob endigina bloklanganda
+    ko'rsatiladigan xabar."""
+    return (
+        "Login yoki parol noto'g'ri. Ruxsat etilgan urinishlar soni "
+        f"tugadi — hisobingiz {LOGIN_LOCKOUT_MINUTES} daqiqaga vaqtincha "
+        "bloklandi. Iltimos, keyinroq qayta urinib ko'ring yoki "
+        "administrator bilan bog'laning."
+    )
+
 
 @router.post("/login", response_model=schemas.CurrentUser)
 @limiter.limit("5/minute")  # ⬅️ YANGI (2-band, 2.2): 1 daqiqada 5 urinishdan ko'p bo'lsa 429
@@ -107,13 +136,9 @@ def login(
     cached_user = get_user_cached(credentials.username)
     
     if cached_user:
-        # Cache'dan topildi - tez tekshirish
-        if not verify_password(credentials.password, cached_user["password_hash"]):
-            logger.warning(f"❌ Login failed (cache) - invalid password: {credentials.username}")
-            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
-            raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
-        
-        # User ni bazadan olish (cache da to'liq ma'lumot yo'q)
+        # User ni bazadan olish (cache da to'liq ma'lumot yo'q, va
+        # lockout maydonlari — failed_login_attempts/locked_until —
+        # keshda umuman saqlanmaydi, har doim bazadan o'qiladi).
         user = db.query(models.User).filter(models.User.id == cached_user["id"]).first()
         if not user:
             # Cache eskirgan - yangilash
@@ -121,6 +146,24 @@ def login(
             record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Foydalanuvchi topilmadi")
 
+        # 🔐 Prompt 19: hisob avvalgi urinishlar tufayli hozir
+        # bloklangan bo'lsa — parol to'g'ri bo'lsa ham kirish rad
+        # etiladi (parol umuman tekshirilmaydi).
+        if is_account_locked(user):
+            logger.warning(f"⛔ Login rejected (cache) - account locked: {credentials.username}")
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip, user=user)
+            raise HTTPException(status_code=423, detail=_locked_account_detail(user))
+
+        # Cache'dan topildi - tez tekshirish
+        if not verify_password(credentials.password, cached_user["password_hash"]):
+            logger.warning(f"❌ Login failed (cache) - invalid password: {credentials.username}")
+            just_locked = register_failed_login(db, user)
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip, user=user)
+            if just_locked:
+                raise HTTPException(status_code=423, detail=_just_locked_detail())
+            raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
+
+        register_successful_login(db, user)
         record_login_attempt(db, credentials.username, success=True, ip_address=client_ip, user=user)
         logger.info(f"✅ Login success (cache): {user.username} in {time.time() - start_time:.3f}s")
         
@@ -135,15 +178,26 @@ def login(
             logger.warning(f"❌ Login failed - user not found: {credentials.username}")
             record_login_attempt(db, credentials.username, success=False, ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
+
+        # 🔐 Prompt 19: hisob hozir bloklangan bo'lsa — parolni umuman
+        # tekshirmasdan aniq xabar bilan rad etamiz.
+        if is_account_locked(user):
+            logger.warning(f"⛔ Login rejected (db) - account locked: {credentials.username}")
+            record_login_attempt(db, credentials.username, success=False, ip_address=client_ip, user=user)
+            raise HTTPException(status_code=423, detail=_locked_account_detail(user))
         
         # Parolni tekshirish
         if not verify_password(credentials.password, user.password_hash):
             logger.warning(f"❌ Login failed - invalid password: {credentials.username}")
+            just_locked = register_failed_login(db, user)
             record_login_attempt(db, credentials.username, success=False, ip_address=client_ip, user=user)
+            if just_locked:
+                raise HTTPException(status_code=423, detail=_just_locked_detail())
             raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
         
         # Cache'ga qo'shish
         get_user_cached(credentials.username)
+        register_successful_login(db, user)
         record_login_attempt(db, credentials.username, success=True, ip_address=client_ip, user=user)
         logger.info(f"✅ Login success (db): {user.username} in {time.time() - start_time:.3f}s")
 
@@ -169,7 +223,10 @@ def login(
         # avtomatik o'chadi va foydalanuvchi qayta login qilishi shart
         # bo'ladi. 8 soatlik muddat baribir bekor qilinmagan — u
         # server tomonda (auth.py, issued_at tekshiruvi orqali)
-        # SESSION_MAX_AGE_SECONDS bilan alohida amalga oshiriladi.
+        # amalga oshiriladi — muddat endi (Prompt 18) admin tomonidan
+        # /settings/system'da o'rnatilgan SystemSettings.
+        # session_timeout_minutes'dan olinadi (qator hali bo'lmasa —
+        # SESSION_MAX_AGE_SECONDS/env zaxira sifatida ishlatiladi).
         max_age=None,
         httponly=True,
         samesite="lax",
@@ -186,6 +243,36 @@ def login(
         logger.warning(f"⚠️ Slow login: {user.username} took {elapsed:.3f}s")
     
     return user
+
+# ==============================================
+# PAROLNI UNUTDINGIZMI? (Prompt 22)
+# ==============================================
+
+@router.post("/forgot-password", response_model=schemas.ForgotPasswordResponse)
+@limiter.limit("3/minute")  # login sahifasida autentifikatsiyasiz ochiq endpoint — spam/DoS'dan himoya
+def forgot_password(
+    request: Request,
+    payload: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+) -> schemas.ForgotPasswordResponse:
+    """
+    Login sahifasidagi "Parolni unutdingizmi?" havolasi bosilib,
+    "So'rov yuborish" bosilganda chaqiriladi. Tizimda o'z-o'zini parolni
+    tiklash (email/SMS orqali) funksiyasi ATAYLAB yo'q — bu xavfsizlik
+    siyosati (parolni faqat admin, xodimning shaxsini tasdiqlagandan
+    so'ng, qo'lda tiklaydi). Shuning uchun bu endpoint faqat adminga
+    xabar (SecurityMessage) yaratadi — javob har doim bir xil bo'ladi
+    (username mavjud yoki yo'qligidan qat'i nazar), aks holda bu
+    endpoint orqali "qaysi login mavjud" ekanini tekshirish (username
+    enumeration) mumkin bo'lib qolar edi.
+    """
+    client_ip = request.client.host if request.client else None
+    username = (payload.username or "").strip() or None
+    record_forgot_password_request(db, username=username, ip_address=client_ip)
+    return schemas.ForgotPasswordResponse(
+        status="ok",
+        message="So'rovingiz qabul qilindi. Administrator siz bilan tez orada bog'lanadi.",
+    )
 
 # ==============================================
 # LOGOUT - KENGAYTIRILGAN
@@ -498,7 +585,9 @@ def update_user(
         )
 
     doctor_id = _validate_doctor_link(db, payload.role, payload.doctor_id, exclude_user_id=target.id)
-    target.role = payload.role
+    # doctor_id alohida validatsiyadan o'tgani uchun apply_update()ga
+    # o'tkazilmaydi — qo'lda, tekshirilgan qiymat bilan o'rnatiladi.
+    apply_update(target, payload, exclude={"doctor_id"})
     target.doctor_id = doctor_id
     db.commit()
     db.refresh(target)

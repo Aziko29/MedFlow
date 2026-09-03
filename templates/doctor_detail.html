@@ -23,7 +23,10 @@
 .doctor-avatar-lg .photo-upload-btn:hover { background: rgba(0,229,255,0.15); box-shadow: var(--glow); }
 {% endblock %}
 
+{% from "_breadcrumb.html" import breadcrumb %}
+
 {% block content %}
+{{ breadcrumb([("Bosh sahifa", "/dashboard"), ("Shifokorlar", "/doctors"), (doctor.fullname, none)]) }}
 <a href="/doctors" class="back-link"><i class="fa-solid fa-arrow-left"></i> Doktorlar ro'yxatiga qaytish</a>
 
 <div class="header-container">

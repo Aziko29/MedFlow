@@ -9,16 +9,23 @@ for tomorrow at 15:00 no longer shows up in "today's queue" just because
 nobody changed its status yet. The KPI summary also now separates
 "today" numbers from "all-time" numbers instead of mixing them (fix #8).
 """
+import asyncio
+import json
 from datetime import datetime, time, timedelta
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 import models
 import schemas
 from auth import get_current_user
-from database import get_db
+from database import SessionLocal, get_db
+from utils.timezone import now_in_clinic_tz
+
+# SSE: navbat necha soniyada bir marta bazadan qayta o'qiladi.
+QUEUE_STREAM_POLL_SECONDS = 3
 
 # ⬅️ YANGI (1-band, KRITIK): login majburiy — /summary va /queue KPI va
 # jonli navbat (bemor ismlari, qarzlar) login'siz ochiq edi.
@@ -29,8 +36,9 @@ router = APIRouter(
 )
 
 
-def _today_bounds() -> tuple[datetime, datetime]:
-    today = datetime.now().date()
+def _today_bounds(db: Session) -> tuple[datetime, datetime]:
+    # ⬅️ Prompt 16: server vaqti emas, klinika vaqt zonasi (SystemSettings.timezone)
+    today = now_in_clinic_tz(db).date()
     start = datetime.combine(today, time.min)
     end = start + timedelta(days=1)
     return start, end
@@ -39,7 +47,7 @@ def _today_bounds() -> tuple[datetime, datetime]:
 def get_dashboard_summary(db: Session) -> schemas.DashboardSummary:
     """📊 Real bazadan KPI hisob-kitoblarini olish — 'bugungi' va 'jami'
     ko'rsatkichlar aniq ajratilgan."""
-    start, end = _today_bounds()
+    start, end = _today_bounds(db)
 
     total_patients = db.query(models.Patient).count()
 
@@ -91,7 +99,7 @@ def get_dashboard_summary_by_role(db: Session, user: models.User) -> schemas.Rol
     """📊 Prompt 4: har bir rol faqat o'ziga tegishli ko'rsatkichlarni oladi.
     Boshqa ko'rsatkichlar schemas.RoleDashboardSummary'da None (frontend
     "—" sifatida ko'rsatadi)."""
-    start, end = _today_bounds()
+    start, end = _today_bounds(db)
     role = user.role
     data: Dict[str, object] = {"role": role}
 
@@ -207,7 +215,7 @@ def get_dashboard_summary_by_role(db: Session, user: models.User) -> schemas.Rol
     # assistant_admin ikkalasi ham ko'ra oladi (audit_log bilan bir xil
     # "faqat o'qish" naqsh, qarang: modules/security_center.py).
     if role in ("admin", "assistant_admin"):
-        since_24h = datetime.now() - timedelta(hours=24)
+        since_24h = now_in_clinic_tz(db) - timedelta(hours=24)
         data["unread_security_messages"] = db.query(models.SecurityMessage).filter(
             models.SecurityMessage.is_read.is_(False)
         ).count()
@@ -233,7 +241,7 @@ def get_live_queue(db: Session, user: models.User) -> List[schemas.AppointmentQu
     if user.role == "lab_doctor":
         return []
 
-    start, end = _today_bounds()
+    start, end = _today_bounds(db)
     q = (
         db.query(models.Appointment)
         .options(
@@ -287,6 +295,51 @@ def api_get_live_queue(
     db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
 ) -> List[schemas.AppointmentQueueItem]:
     return get_live_queue(db, user)
+
+
+@router.get("/queue/stream")
+async def api_stream_live_queue(
+    request: Request, user: models.User = Depends(get_current_user)
+) -> StreamingResponse:
+    """📡 SSE: Jonli Kutish Zali'ni real-vaqtda push qiladi.
+
+    Har bir mijoz o'z sessiya cookie'si (cf_session) bilan ulanadi —
+    EventSource cookie'larni avtomatik yuboradi, alohida token kerak
+    emas. Generator o'zining alohida DB seansini ochadi (request-scoped
+    `get_db` bu yerda ishlatilmaydi — u streaming tugagach yopiladi,
+    poll oralig'ida esa bo'sh connection ushlab turgan bo'lardi).
+    O'zgarish bo'lmasa faqat ": ping" yuboriladi (proxy/browser
+    ulanishni "o'lik" deb yopib qo'ymasligi uchun).
+    """
+    user_id, user_role = user.id, user.role
+
+    async def event_generator():
+        last_payload: str | None = None
+        while True:
+            if await request.is_disconnected():
+                break
+            db = SessionLocal()
+            try:
+                fresh_user = db.get(models.User, user_id)
+                if fresh_user is None or fresh_user.role != user_role:
+                    break
+                queue = get_live_queue(db, fresh_user)
+            finally:
+                db.close()
+
+            payload = json.dumps([item.model_dump() for item in queue], ensure_ascii=False)
+            if payload != last_payload:
+                last_payload = payload
+                yield f"event: queue\ndata: {payload}\n\n"
+            else:
+                yield ": ping\n\n"
+            await asyncio.sleep(QUEUE_STREAM_POLL_SECONDS)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def register_module() -> Dict[str, object]:

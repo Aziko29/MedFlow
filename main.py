@@ -15,10 +15,11 @@ import os
 import logging
 import time
 import traceback as traceback_module
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from typing import Any, Dict, Optional
+from urllib.parse import urlencode
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -30,24 +31,26 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 
 import models
 import schemas
 
 from models import SELF_PASSWORD_CHANGE_LIMIT
-from auth import get_current_user_optional, get_cache_stats, clear_user_cache
+from auth import get_current_user_optional, get_current_user, get_cache_stats, clear_user_cache
 from audit import log_action  
 from rate_limiter import limiter
 from database import engine as db_engine
 from database import get_db
 from database import SessionLocal as SessionLocalForErrorLookup
+from utils.timezone import now_in_clinic_tz, today_in_clinic_tz
 from eskiz_client import sms_enabled
-from modules.appointments import list_appointments
+from modules.appointments import list_appointments_all as list_appointments, list_appointments as list_appointments_paged
 from modules.dashboard import get_dashboard_summary, get_dashboard_summary_by_role, get_live_queue
 from modules.doctors import list_doctors
-from modules.patients import compute_financials, list_patients
-from modules.payments import list_payments
+from modules.patients import compute_financials, list_patients_all as list_patients, list_patients as list_patients_paged
+from modules.payments import list_payments_all as list_payments, list_payments as list_payments_paged
 from modules.lab_results import _parse_result_data
 from modules.security_center import record_system_error_isolated, record_unauthorized_access
 from modules.reports import (
@@ -207,6 +210,24 @@ if os.path.exists(static_dir):
 
 templates = Jinja2Templates(directory="templates")
 
+
+def _merge_query_string(request: Request, **overrides: Any) -> str:
+    """Joriy URL query-parametrlarini saqlab qolib, faqat berilganlarini
+    almashtiradi/qo'shadi (qiymati None bo'lsa — olib tashlaydi). Sort/
+    pagination havolalari uchun (masalan patients.html'dagi allergiya
+    filtri sahifalash/saralash bosilganda ham saqlanib qoladi) — Prompt 25/1,
+    templates/_pagination.html shu funksiyani chaqiradi."""
+    params = dict(request.query_params)
+    for key, value in overrides.items():
+        if value is None:
+            params.pop(key, None)
+        else:
+            params[key] = str(value)
+    return urlencode(params)
+
+
+templates.env.globals["merge_qs"] = _merge_query_string
+
 # ==============================================
 # MODUL YUKLASH DVIGATELI
 # ==============================================
@@ -280,12 +301,6 @@ def clear_all_caches():
 # YORDAMCHI FUNKSIYALAR
 # ==============================================
 
-def _require_gui_user(request: Request, db: Session = Depends(get_db)) -> Optional[models.User]:
-    """GUI sahifalari uchun: agar login qilinmagan bo'lsa /login'ga
-    yo'naltiramiz (bu API 401 emas, brauzer redirect)."""
-    user = get_current_user_optional(request.cookies.get("cf_session"), db)
-    return user
-
 def _open_appointments_for_select(appointments) -> list:
     """Normalizes either models.Appointment or schemas.AppointmentDetail
     objects into a uniform, template-friendly shape for the payment
@@ -305,12 +320,12 @@ def _open_appointments_for_select(appointments) -> list:
         )
     return result
 
-def _calc_age(birth_date: Optional[date]) -> Optional[int]:
+def _calc_age(birth_date: Optional[date], db: Optional[Session] = None) -> Optional[int]:
     """birth_date asosida to'liq yil hisobidagi yoshni qaytaradi (hali tug'ilgan
     kuni yetib kelmagan bo'lsa 1 yil ayiradi). birth_date bo'lmasa None."""
     if birth_date is None:
         return None
-    today = date.today()
+    today = today_in_clinic_tz(db)  # ⬅️ Prompt 16: server emas, klinika vaqt zonasi
     age = today.year - birth_date.year
     if (today.month, today.day) < (birth_date.month, birth_date.day):
         age -= 1
@@ -322,7 +337,7 @@ def _ctx(request: Request, user: models.User, active_page: str, extra: Optional[
         "active_page": active_page,
         "current_user": user,
         "app_version": "3.0.0",
-        "year": datetime.now().year,
+        "year": now_in_clinic_tz().year,  # ⬅️ Prompt 16
     }
     if extra:
         base.update(extra)
@@ -370,7 +385,7 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
             {
                 "summary": summary, 
                 "queue": queue, 
-                "today": date.today().isoformat(),
+                "today": today_in_clinic_tz(db).isoformat(),  # ⬅️ Prompt 16
                 "load_time": f"{elapsed:.2f}ms"
             }
         ),
@@ -380,12 +395,18 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
 # 👥 PATIENTS
 # ==============================================
 
+_PATIENT_SORT_KEYS = {"id", "fullname", "created_at", "birth_date"}
+
+
 @app.get("/patients", response_class=HTMLResponse)
 def patients_page(
     request: Request, 
     db: Session = Depends(get_db),
     allergy: Optional[str] = None,
     chronic_condition: Optional[str] = None,
+    sort_by: str = "id",
+    sort_order: str = "desc",
+    page: int = 1,
 ) -> HTMLResponse:
     start_time = time.time()
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
@@ -399,15 +420,37 @@ def patients_page(
     # buni cashier uchun jim ravishda e'tiborsiz qoldiradi — 403 bilan butun
     # sahifani buzish o'rniga, oddiy (filtrsiz) ro'yxat qaytadi.
     can_filter_medical = user.role in ("admin", "reception", "doctor")
-    patients = list_patients(
-        db,
-        user,
-        allergy if can_filter_medical else None,
-        chronic_condition if can_filter_medical else None,
+
+    # Prompt 25/1: sarlavha-saralash va sahifalash — mavjud (Prompt 24)
+    # sahifalangan /api/patients/list backend'ining o'ziga, oddiy Python
+    # chaqiruvi orqali murojaat qilinadi (URL orqali emas), noto'g'ri
+    # sort_by/page URL'dan qo'lda kiritilsa ham backend xatoga tushmaydi.
+    sort_by = sort_by if sort_by in _PATIENT_SORT_KEYS else "id"
+    sort_order = sort_order if sort_order in ("asc", "desc") else "desc"
+    page = max(page, 1)
+    result = list_patients_paged(
+        db=db,
+        user=user,
+        allergy=allergy if can_filter_medical else None,
+        chronic_condition=chronic_condition if can_filter_medical else None,
+        search=None,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=20,
     )
-    for p in patients:
-        p.age = _calc_age(p.birth_date)
-    
+    # list_patients_paged (Prompt 24 API) items — pydantic PatientRead
+    # obyektlari (from_attributes=True), ORM Patient emas — shuning uchun
+    # ular ustiga qo'shimcha maydon (yo'q, hisoblanadigan .age) to'g'ridan
+    # -to'g'ri o'rnatib bo'lmaydi (pydantic modelida e'lon qilinmagan
+    # atribut). Shuning uchun dict'ga aylantirib, "age"ni shu yerda
+    # qo'shamiz — Jinja p.age ham dict kaliti bo'yicha ishlaydi.
+    patients_list = []
+    for p in result.items:
+        pd = p.model_dump()
+        pd["age"] = _calc_age(pd.get("birth_date"), db)
+        patients_list.append(pd)
+
     elapsed = (time.time() - start_time) * 1000
     logger.info(f"👥 Patients loaded in {elapsed:.2f}ms for user: {user.username}")
     
@@ -417,7 +460,12 @@ def patients_page(
         context=_ctx(
             request, user, "patients", 
             {
-                "patients": patients,
+                "patients": patients_list,
+                "total": result.total,
+                "page": result.page,
+                "total_pages": result.total_pages,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
                 "load_time": f"{elapsed:.2f}ms",
                 "can_filter_medical": can_filter_medical,
                 "filter_allergy": allergy or "",
@@ -554,7 +602,7 @@ def patient_detail_page(
             "patients",
             {
                 "patient": patient,
-                "patient_age": _calc_age(patient.birth_date),
+                "patient_age": _calc_age(patient.birth_date, db),
                 "financials": financials,
                 "appointments": appointments,
                 "payments": payments,
@@ -629,23 +677,50 @@ def doctor_detail_page(
 # 📅 APPOINTMENTS
 # ==============================================
 
+_APPOINTMENT_SORT_KEYS = {"id", "scheduled_time", "price", "status"}
+
+
 @app.get("/appointments", response_class=HTMLResponse)
 def appointments_page(
     request: Request, 
     db: Session = Depends(get_db),
+    sort_by: str = "scheduled_time",
+    sort_order: str = "desc",
+    page: int = 1,
 ) -> HTMLResponse:
     start_time = time.time()
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
     _require_module(user, "appointments")
-    
-    appointments = list_appointments(db)
+
+    # ⬅️ To'liq (sahifalanmagan) ro'yxat — faqat "Yangi To'lov" modalidagi
+    # ochiq qabullar select'ini to'ldirish uchun kerak (jadval sahifalanган
+    # bo'lsa ham, bu select HAMMA qarzdor qabullarni ko'rsatishi kerak).
+    appointments_all = list_appointments(db)
     patients = list_patients(db, user)
-    doctors = list_doctors(db)
+    # Prompt 8: bu ro'yxat "Yangi Qabul Band Qilish" select'ini to'ldiradi
+    # (templates/base.html #a-doctor) — faolsizlantirilgan shifokor yangi
+    # qabullar uchun tanlanmasin, shuning uchun faqat is_active=True.
+    doctors = list_doctors(db, active_only=True)
     
     open_appointments = _open_appointments_for_select(
-        [a for a in appointments if a.status != "cancelled" and a.debt > 0]
+        [a for a in appointments_all if a.status != "cancelled" and a.debt > 0]
+    )
+
+    # Prompt 25/1: jadval o'zi — saralangan va sahifalangan (Prompt 24
+    # /api/appointments/list backend'iga to'g'ridan-to'g'ri Python
+    # chaqiruvi orqali).
+    sort_by = sort_by if sort_by in _APPOINTMENT_SORT_KEYS else "scheduled_time"
+    sort_order = sort_order if sort_order in ("asc", "desc") else "desc"
+    page = max(page, 1)
+    result = list_appointments_paged(
+        db=db,
+        search=None,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=20,
     )
     
     elapsed = (time.time() - start_time) * 1000
@@ -659,7 +734,12 @@ def appointments_page(
             user,
             "appointments",
             {
-                "appointments": appointments,
+                "appointments": result.items,
+                "total": result.total,
+                "page": result.page,
+                "total_pages": result.total_pages,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
                 "patients": patients,
                 "doctors": doctors,
                 "open_appointments": open_appointments,
@@ -672,20 +752,82 @@ def appointments_page(
 # 💰 PAYMENTS
 # ==============================================
 
+_PAYMENT_SORT_KEYS = {"id", "amount", "status", "created_at"}
+
+
 @app.get("/payments", response_class=HTMLResponse)
-def payments_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def payments_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    sort_by: str = "id",
+    sort_order: str = "desc",
+    page: int = 1,
+) -> HTMLResponse:
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if user is None:
         return RedirectResponse(url="/login")
     _require_module(user, "payments")
-    
-    payments = list_payments(db)
-    raw_open = db.query(models.Appointment).filter(models.Appointment.status != "cancelled").all()
+
+    # Prompt 25/1: jadval — saralangan va sahifalangan (Prompt 24
+    # /api/payments/list backend'iga to'g'ridan-to'g'ri Python chaqiruvi).
+    sort_by = sort_by if sort_by in _PAYMENT_SORT_KEYS else "id"
+    sort_order = sort_order if sort_order in ("asc", "desc") else "desc"
+    page = max(page, 1)
+    result = list_payments_paged(
+        db=db,
+        search=None,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=20,
+    )
+    # 🛏 Prompt 11 — N+1 tuzatish: pastda `_open_appointments_for_select`
+    # har bir Appointment uchun uchta narsaga murojaat qiladi:
+    #   - `.debt` (property) -> `.payments` (models.py: Appointment.debt
+    #     -> paid_amount -> self.payments),
+    #   - `.patient.fullname` (agar patient_name oldindan hisoblanmagan
+    #     bo'lsa — aynan shu yerda, xom models.Appointment obyektlari
+    #     uchun shunday),
+    #   - `.doctor.fullname` (xuddi shunday).
+    # Eager load qilmasak, ochiq qabullar ro'yxatidagi HAR BIR
+    # appointment uchun 2-3 ta alohida SQL so'rov ketadi (klassik N+1).
+    # `joinedload(...)` uchalasini ham bitta LEFT JOIN so'rovga
+    # birlashtiradi. Appointment<->Payment bir-ko'pga (1:N) bog'liq
+    # bo'lgani uchun bitta appointment bir nechta to'lovga ega bo'lsa,
+    # JOIN natijasida shu appointment qatori bir necha marta qaytishi
+    # mumkin edi — legacy `db.query()` (Query) API buni Python
+    # darajasida AVTOMATIK unique() qiladi (identity-map bo'yicha),
+    # shuning uchun natija baribir dublikatsiz qaytadi
+    # (tests/test_appointments_n_plus_one.py bu holatni aniq
+    # tekshiradi).
+    raw_open = (
+        db.query(models.Appointment)
+        .options(
+            joinedload(models.Appointment.payments),
+            joinedload(models.Appointment.patient),
+            joinedload(models.Appointment.doctor),
+        )
+        .filter(models.Appointment.status != "cancelled")
+        .all()
+    )
     open_appointments = _open_appointments_for_select([a for a in raw_open if a.debt > 0])
     return templates.TemplateResponse(
         request=request,
         name="payments.html",
-        context=_ctx(request, user, "payments", {"payments": payments, "open_appointments": open_appointments}),
+        context=_ctx(
+            request,
+            user,
+            "payments",
+            {
+                "payments": result.items,
+                "total": result.total,
+                "page": result.page,
+                "total_pages": result.total_pages,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+                "open_appointments": open_appointments,
+            },
+        ),
     )
 
 # ==============================================
@@ -828,6 +970,95 @@ def _require_module(user: models.User, module_key: str) -> None:
         raise HTTPException(status_code=403, detail="Bu bo'limga kirish huquqingiz yo'q")
 
 
+# ==============================================
+# 🔎 GLOBAL QIDIRUV (Prompt 25/3)
+# ==============================================
+# Topbar'dagi bitta qidiruv input'i — bemor, shifokor, qabul va to'lovlar
+# orasida BIR VAQTDA qidiradi, natijalarni turi bo'yicha guruhlab
+# qaytaradi. Har bir guruh faqat foydalanuvchi ROLE_MODULE_ACCESS'da
+# tegishli modulga ruxsati bo'lsagina to'ldiriladi — masalan lab_doctor
+# uchun "appointments"/"payments"/"doctors" har doim bo'sh qaytadi,
+# sahifa darajasidagi kirish cheklovi bilan bir xil bo'lishi uchun.
+# Bemorlar qidiruvi qo'shimcha ravishda list_patients_paged (modules/
+# patients.py) orqali o'tadi — u lab_doctor uchun "faqat biriktirilgan
+# bemorlar" qatorini ham qo'llaydi, shu logikani bu yerda takrorlamaslik
+# uchun.
+_SEARCH_RESULT_LIMIT = 5
+
+
+@app.get("/api/search", response_model=schemas.GlobalSearchResponse)
+def global_search(
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> schemas.GlobalSearchResponse:
+    q = q.strip()
+    allowed = ROLE_MODULE_ACCESS.get(user.role, {"dashboard"})
+    result = schemas.GlobalSearchResponse()
+    if len(q) < 2:
+        return result
+
+    if "patients" in allowed:
+        patients_page = list_patients_paged(
+            db=db, user=user, search=q, sort_by="fullname", sort_order="asc",
+            page=1, page_size=_SEARCH_RESULT_LIMIT,
+        )
+        result.patients = [
+            schemas.SearchResultItem(
+                id=p.id, title=p.fullname, subtitle=p.phone, url=f"/patients/{p.id}"
+            )
+            for p in patients_page.items
+        ]
+
+    if "doctors" in allowed:
+        like = f"%{q}%"
+        doctors = (
+            db.query(models.Doctor)
+            .filter(or_(models.Doctor.fullname.ilike(like), models.Doctor.specialty.ilike(like)))
+            .order_by(models.Doctor.fullname.asc())
+            .limit(_SEARCH_RESULT_LIMIT)
+            .all()
+        )
+        result.doctors = [
+            schemas.SearchResultItem(
+                id=d.id, title=d.fullname, subtitle=d.specialty, url=f"/doctors/{d.id}"
+            )
+            for d in doctors
+        ]
+
+    if "appointments" in allowed:
+        appointments_page = list_appointments_paged(
+            db=db, search=q, sort_by="scheduled_time", sort_order="desc",
+            page=1, page_size=_SEARCH_RESULT_LIMIT,
+        )
+        result.appointments = [
+            schemas.SearchResultItem(
+                id=a.id,
+                title=f"{a.patient_name} — {a.doctor_name}",
+                subtitle=a.scheduled_time.strftime("%Y-%m-%d %H:%M"),
+                url="/appointments",
+            )
+            for a in appointments_page.items
+        ]
+
+    if "payments" in allowed:
+        payments_page = list_payments_paged(
+            db=db, search=q, sort_by="created_at", sort_order="desc",
+            page=1, page_size=_SEARCH_RESULT_LIMIT,
+        )
+        result.payments = [
+            schemas.SearchResultItem(
+                id=pay.id,
+                title=f"{pay.patient_name} — {pay.amount:,} UZS",
+                subtitle=pay.note or None,
+                url="/payments",
+            )
+            for pay in payments_page.items
+        ]
+
+    return result
+
+
 @app.get("/profile", response_class=HTMLResponse)
 def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
@@ -926,9 +1157,20 @@ async def http_exception_with_security_logging(request: Request, exc: FastAPIHTT
     if exc.status_code == 403:
         cf_user = None
         try:
+            # 🩹 Prompt 15: avval `db_gen = get_db(); db = next(db_gen)`
+            # so'ng qo'lda `db.close()` chaqirilardi — bu SESSIYANI
+            # yopadi, lekin `get_db()` GENERATOR'ining o'zini hech qachon
+            # yopmaydi (uning ichidagi `finally: db.close()` bloki hech
+            # qachon ishga tushmaydi, chunki generator na tugaydi, na
+            # aniq `.close()` olinadi). CPython'da bu odatda generator
+            # refsanoq nolga tushganda GC orqali "tasodifan" yopiladi,
+            # lekin bunga tayanish shart emas — `contextlib.closing`
+            # `db_gen.close()`ni KAFOLATLI, generator ichidagi kod
+            # (get_current_user_optional/record_unauthorized_access)
+            # xatolik bersa ham chaqiradi.
             db_gen = get_db()
-            db = next(db_gen)
-            try:
+            with closing(db_gen):
+                db = next(db_gen)
                 cf_user = get_current_user_optional(request.cookies.get("cf_session"), db)
                 record_unauthorized_access(
                     db,
@@ -937,8 +1179,6 @@ async def http_exception_with_security_logging(request: Request, exc: FastAPIHTT
                     status_code=exc.status_code,
                     user=cf_user,
                 )
-            finally:
-                db.close()
         except Exception:
             logger.exception("401/403 xatoligini SystemError'ga yozib bo'lmadi")
 
@@ -969,7 +1209,7 @@ def health_check() -> dict:
     return {
         "status": "healthy",
         "version": "3.0.0",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": now_in_clinic_tz().isoformat(),  # ⬅️ Prompt 16
         "modules_loaded": len(clinicflow_engine.loaded_modules),
         "user_cache": get_cache_stats(),
         # 📩 FAZA 1: Eskiz.uz SMS servisi sozlanganmi (credential bor-yo'qligi,

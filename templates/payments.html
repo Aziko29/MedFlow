@@ -1,5 +1,6 @@
 <!-- templates/payments.html -->
 {% extends "base.html" %}
+{% from "_pagination.html" import sort_th, pagination_nav %}
 
 {% block title %}To'lovlar{% endblock %}
 
@@ -25,9 +26,14 @@
 </div>
 
 <div class="data-section">
-    <table class="content-table">
+    <table class="content-table" id="paymentsTable" data-sort-by="{{ sort_by }}" data-sort-order="{{ sort_order }}">
         <thead>
-            <tr><th>ID</th><th>Bemor</th><th>Qabul</th><th>Miqdor (UZS)</th><th>Turi</th><th>Izoh</th><th>Sana</th>
+            <tr>
+                {{ sort_th(request, 'ID', 'id', sort_by, sort_order) }}
+                <th>Bemor</th><th>Qabul</th>
+                {{ sort_th(request, 'Miqdor (UZS)', 'amount', sort_by, sort_order) }}
+                <th>Turi</th><th>Izoh</th>
+                {{ sort_th(request, 'Sana', 'created_at', sort_by, sort_order) }}
                 {% if current_user.role in ['admin', 'cashier'] %}<th>Amallar</th>{% endif %}
             </tr>
         </thead>
@@ -60,5 +66,6 @@
             {% endfor %}
         </tbody>
     </table>
+    <div id="paymentsPaginationNav">{{ pagination_nav(request, page, total_pages, total) }}</div>
 </div>
 {% endblock %}

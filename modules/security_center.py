@@ -24,7 +24,7 @@ bog'liq qism:
      faqat from_user_id=None ("tizim" yuborgan) bilan ajratiladi.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
@@ -205,6 +205,37 @@ def record_login_attempt(
     return entry
 
 
+def record_forgot_password_request(
+    db: Session,
+    username: Optional[str],
+    ip_address: Optional[str] = None,
+) -> models.SecurityMessage:
+    """Login sahifasidagi "Parolni unutdingizmi?" havolasi bosilib,
+    so'rov yuborilganda chaqiriladi (Prompt 22). Foydalanuvchi hali
+    tizimga kirmagani uchun bu FAQAT admin(lar)ga ko'rinadigan tizim
+    xabari — parolni haqiqatda tiklamaydi, faqat adminni xabardor
+    qiladi (u keyin "Vaqtinchalik parol" funksiyasi orqali qo'lda
+    tiklaydi, qarang: POST /api/auth/admin-reset-password/{user_id}).
+    from_user_id=None — muvaffaqiyatsiz login ogohlantirishlari bilan
+    bir xil naqsh ("tizim" yuborgan xabar)."""
+    who = f"'{username}'" if username else "(login kiritilmagan)"
+    alert = models.SecurityMessage(
+        from_user_id=None,
+        subject=f"🔑 Parolni tiklash so'rovi: {who}",
+        message=(
+            f"Login sahifasida foydalanuvchi {who} parolni unutganini bildirdi "
+            f"(IP: {ip_address or 'nomalum'}). Agar bu haqiqiy xodim bo'lsa, "
+            "uning shaxsini tasdiqlagandan so'ng \"Foydalanuvchilar\" bo'limidan "
+            "vaqtinchalik parol tiklab bering."
+        ),
+        priority="medium",
+    )
+    db.add(alert)
+    db.commit()
+    logger.info(f"🔑 Parolni tiklash so'rovi qayd etildi: {who} (IP: {ip_address or 'nomalum'})")
+    return alert
+
+
 def record_unauthorized_access(
     db: Session,
     endpoint: str,
@@ -353,7 +384,7 @@ def list_recent_system_errors(
     _user: models.User = Depends(require_admin_or_assistant()),
 ) -> List[schemas.SystemErrorOut]:
     """Oxirgi 24 soatdagi xatoliklar."""
-    since = datetime.utcnow() - timedelta(hours=24)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     errors = (
         db.query(models.SystemError)
         .filter(models.SystemError.created_at >= since)

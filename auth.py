@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Dict, Any
 
 from argon2 import PasswordHasher
@@ -152,6 +153,104 @@ def needs_rehash(password_hash: str) -> bool:
         return _ph.check_needs_rehash(password_hash)
     except InvalidHash:
         return True
+
+# ==============================================
+# HISOBNI VAQTINCHALIK BLOKLASH (Prompt 19)
+#
+# SystemSettings.max_login_attempts sozlamasi avvalgi prompt'larda DB'da
+# bor edi, lekin hech qayerda o'qilmas edi ("hozircha FAQAT
+# saqlanadi/ko'rsatiladi" — qarang models.py, SystemSettings docstring).
+# Endi u haqiqiy amaliy ta'sirga ega: ketma-ket noto'g'ri parol bilan
+# login urinishlari shu limitga yetganda, hisob LOGIN_LOCKOUT_MINUTES
+# daqiqaga bloklanadi — parol to'g'ri terilgan taqdirda ham kirish rad
+# etiladi (muddat o'tmaguncha).
+#
+# ⬅️ Nega User.failed_login_attempts/locked_until (LoginLog'ni so'rash
+# o'rniga)? LoginLog — faqat audit/ko'rish uchun (Prompt 9), "hozirgi
+# holat"ni har safar tarixdan qayta hisoblash (ketma-ket muvaffaqiyatsiz
+# yozuvlarni sanash, orada muvaffaqiyatli login bo'lmaganini tekshirish)
+# har bir login so'rovida qimmatga tushadi va poyga-holatlarga (race
+# condition) moyilroq. User jadvalidagi ikkita ustun — arzon, atomik va
+# to'g'ridan-to'g'ri "hozir bloklanganmi?" savoliga javob beradi.
+# ==============================================
+
+# Standart bloklash muddati — LOGIN_LOCKOUT_MINUTES environment
+# o'zgaruvchisi orqali (masalan tezroq test qilish uchun) sozlanishi
+# mumkin; o'rnatilmasa 15 daqiqa.
+_LOCKOUT_MINUTES_RAW = os.environ.get("LOGIN_LOCKOUT_MINUTES", "").strip()
+if _LOCKOUT_MINUTES_RAW:
+    try:
+        LOGIN_LOCKOUT_MINUTES = int(_LOCKOUT_MINUTES_RAW)
+        if LOGIN_LOCKOUT_MINUTES <= 0:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError(
+            "LOGIN_LOCKOUT_MINUTES noto'g'ri qiymatga ega "
+            f"({_LOCKOUT_MINUTES_RAW!r}) — musbat butun son bo'lishi kerak."
+        )
+else:
+    LOGIN_LOCKOUT_MINUTES = 15
+
+# SystemSettings qatori hali yaratilmagan (get-or-create hali ishlamagan)
+# holatlar uchun zaxira qiymat — model ustunidagi standart (5) bilan bir xil.
+_DEFAULT_MAX_LOGIN_ATTEMPTS = 5
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _get_max_login_attempts(db: Optional[Session]) -> int:
+    """SystemSettings.max_login_attempts'dan urinishlar limitini o'qiydi
+    (db=None yoki qator hali yo'q bo'lsa — standart 5)."""
+    if db is not None:
+        settings = db.query(models.SystemSettings).first()
+        if settings is not None and settings.max_login_attempts:
+            return settings.max_login_attempts
+    return _DEFAULT_MAX_LOGIN_ATTEMPTS
+
+
+def is_account_locked(user: models.User) -> bool:
+    """Hisob HOZIR bloklanganmi (locked_until hali kelmagan)?"""
+    return bool(user.locked_until and user.locked_until > _utcnow())
+
+
+def account_lock_remaining_seconds(user: models.User) -> int:
+    """Bloklash tugashiga qolgan soniyalar (bloklanmagan bo'lsa — 0)."""
+    if not is_account_locked(user):
+        return 0
+    return max(0, int((user.locked_until - _utcnow()).total_seconds()))
+
+
+def register_failed_login(db: Session, user: models.User) -> bool:
+    """Noto'g'ri parol bilan urinishni hisoblaydi. Agar shu urinish bilan
+    ketma-ket muvaffaqiyatsizliklar soni SystemSettings.max_login_attempts
+    ga YETSA, hisobni LOGIN_LOCKOUT_MINUTES daqiqaga bloklaydi va
+    hisoblagichni 0'ga qaytaradi (keyingi bloklashgacha yana to'liq limit
+    beriladi). True qaytarsa — aynan SHU urinish hisobni bloklab qo'ydi
+    (chaqiruvchi shunga mos, aniq xabar qaytarishi uchun)."""
+    max_attempts = _get_max_login_attempts(db)
+    user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+    just_locked = False
+    if user.failed_login_attempts >= max_attempts:
+        user.locked_until = _utcnow() + timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+        user.failed_login_attempts = 0
+        just_locked = True
+    db.add(user)
+    db.commit()
+    return just_locked
+
+
+def register_successful_login(db: Session, user: models.User) -> None:
+    """Muvaffaqiyatli login'dan so'ng hisoblagich/bloklashni tozalaydi
+    (muddati allaqachon o'tgan eski bloklash yozuvi ham shu yerda
+    tozalanadi)."""
+    if user.failed_login_attempts or user.locked_until:
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        db.add(user)
+        db.commit()
+
 
 # ==============================================
 # CACHE - TEZKOR FOYDALANUVCHI QIDIRISH
@@ -334,7 +433,29 @@ def create_session_token(user_id: int) -> str:
     payload = f"{user_id}:{int(time.time())}"
     return f"{payload}:{_sign(payload)}"
 
-def _read_session_token(token: str) -> Optional[int]:
+# ⬅️ YANGI (Prompt 18): sessiya muddati endi DINAMIK — admin
+# /settings/system orqali SystemSettings.session_timeout_minutes'ni
+# o'zgartirsa, KEYINGI so'rovdanoq (server qayta ishga tushirilmasdan)
+# yangi muddat amal qiladi. SESSION_MAX_AGE_SECONDS (yuqorida,
+# SESSION_EXPIRE_MINUTES environment o'zgaruvchisidan yoki standart 8
+# soatdan hisoblangan) endi FAQAT zaxira (fallback) qiymat: DB'da hali
+# SystemSettings qatori yo'q bo'lsa (masalan yangi o'rnatilgan tizim,
+# admin hali /settings/system sahifasiga kirmagan) yoki db=None bilan
+# chaqirilsa (masalan DB seansi mavjud bo'lmagan kontekst) ishlatiladi.
+def _get_session_max_age_seconds(db: Optional[Session] = None) -> int:
+    """SystemSettings.session_timeout_minutes'dan sessiya muddatini
+    (soniyada) hisoblab qaytaradi. db berilmasa yoki qator hali
+    yaratilmagan bo'lsa — SESSION_MAX_AGE_SECONDS (env/standart)
+    qaytariladi — get-or-create qilib yon ta'sir yaratmaydi, faqat
+    o'qiydi (bu funksiya har bir himoyalangan so'rovda chaqiriladi,
+    shuning uchun yengil va yon ta'sirsiz bo'lishi shart)."""
+    if db is not None:
+        settings = db.query(models.SystemSettings).first()
+        if settings is not None and settings.session_timeout_minutes:
+            return settings.session_timeout_minutes * 60
+    return SESSION_MAX_AGE_SECONDS
+
+def _read_session_token(token: str, db: Optional[Session] = None) -> Optional[int]:
     parts = token.split(":")
     if len(parts) != 3:
         return None
@@ -342,7 +463,7 @@ def _read_session_token(token: str) -> Optional[int]:
     payload = f"{user_id_str}:{issued_at_str}"
     if not hmac.compare_digest(_sign(payload), signature):
         return None
-    if time.time() - float(issued_at_str) > SESSION_MAX_AGE_SECONDS:
+    if time.time() - float(issued_at_str) > _get_session_max_age_seconds(db):
         return None
     try:
         return int(user_id_str)
@@ -355,7 +476,7 @@ def get_current_user(
 ) -> models.User:
     if not cf_session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tizimga kirilmagan")
-    user_id = _read_session_token(cf_session)
+    user_id = _read_session_token(cf_session, db)
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessiya yaroqsiz")
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -369,7 +490,7 @@ def get_current_user_optional(
 ) -> Optional[models.User]:
     if not cf_session:
         return None
-    user_id = _read_session_token(cf_session)
+    user_id = _read_session_token(cf_session, db)
     if user_id is None:
         return None
     return db.query(models.User).filter(models.User.id == user_id).first()

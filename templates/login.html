@@ -50,6 +50,44 @@
         }
         .btn-login:hover { background: #33ecff; box-shadow: 0 0 26px rgba(0,229,255,0.55); transform: translateY(-1px); }
         .btn-login:disabled { background: #4a5670; box-shadow: none; cursor: not-allowed; }
+        .forgot-link-row { text-align: right; margin-top: -8px; margin-bottom: 18px; }
+        .forgot-link-row a {
+            color: #7c8aa8; font-size: 13px; text-decoration: none; transition: color 0.15s;
+        }
+        .forgot-link-row a:hover { color: #00e5ff; text-decoration: underline; }
+
+        /* Modal: Parolni unutdingizmi? */
+        .fp-modal {
+            display: none; position: fixed; inset: 0; z-index: 50; align-items: center; justify-content: center;
+            background: rgba(2, 6, 12, 0.65); backdrop-filter: blur(4px);
+        }
+        .fp-modal.open { display: flex; }
+        .fp-modal-content {
+            background: rgba(15, 23, 36, 0.92); border: 1px solid rgba(0,229,255,0.18);
+            padding: 28px; width: 340px; position: relative;
+            clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+            box-shadow: 0 0 40px rgba(0,229,255,0.15), 0 20px 40px rgba(0,0,0,0.5);
+            animation: cardIn 0.25s ease;
+        }
+        .fp-modal-content h3 { color: #e6f1ff; font-size: 17px; margin-bottom: 10px; font-family: 'Space Grotesk', sans-serif; }
+        .fp-modal-content h3 i { color: #00e5ff; margin-right: 6px; }
+        .fp-modal-content p { color: #9fb0c9; font-size: 13.5px; line-height: 1.6; margin-bottom: 20px; }
+        .fp-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .fp-btn-secondary {
+            background: transparent; color: #9fb0c9; border: 1px solid rgba(255,255,255,0.12);
+            padding: 9px 16px; border-radius: 4px; font-size: 13.5px; cursor: pointer; font-family: inherit;
+        }
+        .fp-btn-secondary:hover { border-color: rgba(255,255,255,0.3); color: #e6f1ff; }
+        .fp-btn-primary {
+            background: #00e5ff; color: #04121a; border: none; padding: 9px 16px; border-radius: 4px;
+            font-weight: 700; font-size: 13.5px; cursor: pointer; font-family: inherit;
+        }
+        .fp-btn-primary:hover { background: #33ecff; }
+        .fp-btn-primary:disabled { background: #4a5670; cursor: not-allowed; }
+        .fp-modal-close { position: absolute; top: 12px; right: 14px; color: #7c8aa8; cursor: pointer; font-size: 15px; background: none; border: none; }
+        .fp-modal-close:hover { color: #e6f1ff; }
+        .fp-success { display: none; color: #00e5ff; font-size: 13px; margin-top: 10px; }
+        .fp-success.show { display: block; }
     </style>
 </head>
 <body>
@@ -66,10 +104,32 @@
                 <label for="password">Parol:</label>
                 <input type="password" id="password" required autocomplete="off">
             </div>
+            <div class="forgot-link-row">
+                <a href="#" id="forgotPasswordLink">Parolni unutdingizmi?</a>
+            </div>
             <button type="submit" class="btn-login" id="loginBtn">Kirish</button>
         </form>
     </div>
 
+    <!-- ═══════════════ MODAL: Parolni unutdingizmi? ═══════════════ -->
+    <div id="forgotPasswordModal" class="fp-modal">
+        <div class="fp-modal-content">
+            <button type="button" class="fp-modal-close" id="fpModalCloseBtn" aria-label="Yopish">&times;</button>
+            <h3><i class="fa-solid fa-circle-info"></i>Parolni tiklash</h3>
+            <p>
+                Xavfsizlik sabablari tufayli parolni tizim orqali mustaqil tiklab bo'lmaydi.
+                Administratorga murojaat qiling — u sizga vaqtinchalik parol beradi.
+            </p>
+            <div class="fp-modal-actions">
+                <button type="button" class="fp-btn-secondary" id="fpCancelBtn">Yopish</button>
+                <button type="button" class="fp-btn-primary" id="fpNotifyBtn">So'rov yuborish</button>
+            </div>
+            <div class="fp-success" id="fpSuccessMsg"></div>
+            <div class="form-error" id="fpErrorMsg" style="margin-top: 12px; margin-bottom: 0;"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/password-toggle.js"></script>
     <script>
         // ⏱️ Frontend inactivity timer /login?reason=timeout ga
         // yo'naltirgan bo'lsa, buni tushunarli xabar bilan ko'rsatamiz.
@@ -111,6 +171,80 @@
             }
         }
         console.log('%c🛰️ ClinicFlow login terminal — mustahkam parol tanlang!', 'color:#00e5ff;font-weight:bold;');
+
+        // ═══════════════════════════════════════════════════════════
+        // "Parolni unutdingizmi?" — administratorga murojaat modali.
+        // Tizimda o'z-o'zini parolni tiklash (email/SMS) funksiyasi
+        // ATAYLAB yo'q — xavfsizlik siyosati bo'yicha parolni faqat
+        // admin, xodimning shaxsini tasdiqlagandan so'ng, qo'lda
+        // tiklaydi. "So'rov yuborish" bosilganda POST
+        // /api/auth/forgot-password chaqiriladi — bu adminga Xavfsizlik
+        // markazida (SecurityMessage) ko'rinadigan xabar yaratadi
+        // (qarang: modules/security_center.py -> record_forgot_password_request).
+        // ═══════════════════════════════════════════════════════════
+        (function () {
+            var link = document.getElementById('forgotPasswordLink');
+            var modal = document.getElementById('forgotPasswordModal');
+            var closeBtn = document.getElementById('fpModalCloseBtn');
+            var cancelBtn = document.getElementById('fpCancelBtn');
+            var notifyBtn = document.getElementById('fpNotifyBtn');
+            var successMsg = document.getElementById('fpSuccessMsg');
+            var errorMsg = document.getElementById('fpErrorMsg');
+
+            function openFpModal() {
+                successMsg.classList.remove('show');
+                successMsg.textContent = '';
+                errorMsg.style.display = 'none';
+                notifyBtn.disabled = false;
+                notifyBtn.textContent = "So'rov yuborish";
+                modal.classList.add('open');
+            }
+            function closeFpModal() {
+                modal.classList.remove('open');
+            }
+
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                openFpModal();
+            });
+            closeBtn.addEventListener('click', closeFpModal);
+            cancelBtn.addEventListener('click', closeFpModal);
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) closeFpModal();
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && modal.classList.contains('open')) closeFpModal();
+            });
+
+            notifyBtn.addEventListener('click', async function () {
+                notifyBtn.disabled = true;
+                notifyBtn.textContent = 'Yuborilmoqda...';
+                errorMsg.style.display = 'none';
+                try {
+                    var usernameField = document.getElementById('username');
+                    var response = await fetch('/api/auth/forgot-password', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: (usernameField.value || '').trim() || null
+                        })
+                    });
+                    var body = await response.json().catch(function () { return null; });
+                    if (!response.ok) {
+                        throw new Error((body && body.detail) || `Xatolik (${response.status})`);
+                    }
+                    notifyBtn.textContent = 'Yuborildi ✓';
+                    successMsg.textContent = body.message;
+                    successMsg.classList.add('show');
+                } catch (err) {
+                    notifyBtn.disabled = false;
+                    notifyBtn.textContent = "So'rov yuborish";
+                    errorMsg.textContent = err.message || "So'rovni yuborib bo'lmadi. Birozdan so'ng qayta urinib ko'ring.";
+                    errorMsg.style.display = 'block';
+                }
+            });
+        })();
     </script>
 </body>
 </html>

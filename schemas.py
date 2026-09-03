@@ -20,6 +20,7 @@ from models import (
     POSITION_ROLES,
     SECURITY_MESSAGE_PRIORITIES,
     SELF_PASSWORD_CHANGE_LIMIT,
+    THEME_MODES,
     USER_ROLES,
 )
 
@@ -30,6 +31,20 @@ _USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+
+
+class ForgotPasswordRequest(BaseModel):
+    """POST /api/auth/forgot-password — login sahifasidagi "Parolni
+    unutdingizmi?" havolasi orqali yuboriladigan so'rov (Prompt 22).
+    username ixtiyoriy: foydalanuvchi login maydoniga hali hech narsa
+    kiritmagan bo'lishi mumkin, shu holatda ham so'rov yuborilaveradi —
+    admin baribir IP orqali qaysi vaqt ekanini ko'radi."""
+    username: Optional[str] = Field(default=None, max_length=100)
+
+
+class ForgotPasswordResponse(BaseModel):
+    status: str = "ok"
+    message: str
 
 
 class CurrentUser(BaseModel):
@@ -212,6 +227,15 @@ class PatientPhotoUploadResponse(BaseModel):
     photo_path: str
 
 
+class PatientPage(BaseModel):
+    """GET /api/patients/list sahifalangan javobi (Prompt 24)."""
+    items: List[PatientRead]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 # ── Palata (statsionar davolash, Prompt 7) ──────────────────────────
 class PatientRoomUpdate(BaseModel):
     """Palataga yotqizish/chiqarish uchun umumiy so'rov tanasi.
@@ -219,13 +243,17 @@ class PatientRoomUpdate(BaseModel):
     POST /{id}/admit — room_number MAJBURIY (endpoint darajasida
     tekshiriladi), admitted_at ixtiyoriy (berilmasa serverdagi joriy
     vaqt ishlatiladi).
-    POST /{id}/discharge — faqat discharged_at ishlatiladi (ixtiyoriy,
-    berilmasa serverdagi joriy vaqt ishlatiladi), room_number/admitted_at
-    e'tiborga olinmaydi.
+    POST /{id}/discharge — discharged_at va discharged_reason ishlatiladi
+    (ikkalasi ham ixtiyoriy; discharged_at berilmasa serverdagi joriy
+    vaqt ishlatiladi), room_number/admitted_at e'tiborga olinmaydi.
     """
     room_number: Optional[str] = Field(default=None, max_length=20)
     admitted_at: Optional[datetime.datetime] = None
     discharged_at: Optional[datetime.datetime] = None
+    # 🛏️ Prompt 10 — chiqarish sababi (ixtiyoriy erkin matn), joriy
+    # PatientAdmission tarix qatoriga yoziladi (modules/patients.py:
+    # discharge_patient).
+    discharged_reason: Optional[str] = None
 
     @field_validator("room_number")
     @classmethod
@@ -254,6 +282,21 @@ class RoomGroup(BaseModel):
     patients: List[PatientRoomResponse]
 
 
+class PatientAdmissionRead(BaseModel):
+    """🛏️ Prompt 10 — bitta yotqizilish/chiqarilish TARIX qatori
+    (models.PatientAdmission). GET /{patient_id} javobida
+    `PatientDetail.admissions` ro'yxati sifatida qaytariladi — bemor
+    necha marta yotqizilib chiqarilgan bo'lsa, shuncha qator, eng
+    yangisi birinchi (models.Patient.admissions relationship'i
+    admitted_at.desc() bo'yicha saralangan)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    room_number: Optional[str] = None
+    admitted_at: datetime.datetime
+    discharged_at: Optional[datetime.datetime] = None
+    discharged_reason: Optional[str] = None
+
+
 class PatientFinancials(BaseModel):
     """Bemorning umumiy moliyaviy holati — HISOBLANADI, saqlanmaydi."""
     total_charged: int
@@ -263,6 +306,9 @@ class PatientFinancials(BaseModel):
 
 class PatientDetail(PatientRead):
     financials: PatientFinancials
+    # 🛏️ Prompt 10 — bemorning to'liq yotqizilishlar tarixi (bag
+    # tuzatilgandan keyin PatientAdmission jadvalidan to'ldiriladi).
+    admissions: List[PatientAdmissionRead] = []
 
 
 # ── Allergy ───────────────────────────────────────────────────────────
@@ -367,6 +413,24 @@ class AppointmentReschedule(BaseModel):
     scheduled_time: datetime.datetime
 
 
+class DoctorAvailableSlotsResponse(BaseModel):
+    """GET /api/doctors/{doctor_id}/available-slots javobi (Prompt 14).
+
+    `slots` — shu kun uchun HALI BAND QILINMAGAN, ish vaqti (working_hours)
+    ichidagi va o'tmishga tegishli bo'lmagan boshlanish vaqtlari, ular
+    orasidagi qadam `interval_minutes`ga teng (Sozlamalar modulidagi
+    queue_interval_minutes — book_appointment aynan shu qiymat bilan
+    to'qnashuvni tekshiradi, shuning uchun bu ro'yxatdagi har bir vaqt
+    darhol POST /api/appointments/book'ga yuborilsa, odatda muvaffaqiyatli
+    o'tadi — "odatda", chunki shu oraliqda boshqa xodim ulgurib band qilib
+    qo'yishi mumkin, buning oldi esa navbat band qilishning o'zida DB
+    darajasidagi qulf bilan olinadi)."""
+    doctor_id: int
+    date: datetime.date
+    interval_minutes: int
+    slots: List[datetime.datetime]
+
+
 class AppointmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -383,6 +447,15 @@ class AppointmentDetail(AppointmentRead):
     doctor_name: str
     paid_amount: int
     debt: int
+
+
+class AppointmentPage(BaseModel):
+    """GET /api/appointments/list sahifalangan javobi (Prompt 24)."""
+    items: List[AppointmentDetail]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class AppointmentQueueItem(BaseModel):
@@ -456,6 +529,15 @@ class PaymentListItem(BaseModel):
     # yashiradi (bug fix: eski versiyada tugma har doim ko'rinar edi).
     is_refunded: bool = False
     created_at: datetime.datetime
+
+
+class PaymentPage(BaseModel):
+    """GET /api/payments/list sahifalangan javobi (Prompt 24)."""
+    items: List[PaymentListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────
@@ -918,6 +1000,12 @@ class ProfileUpdate(BaseModel):
     last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     phone: Optional[str] = Field(default=None, min_length=5, max_length=32)
     email: Optional[str] = Field(default=None, max_length=255)
+    # 🌗 Prompt 21 — Yorug'/Qorong'u/Avto rejim tanlovi (models.THEME_MODES).
+    # ThemeController (templates/base.html) mavzu o'zgarganda shu maydon
+    # bilan PUT /settings/profile'ga yuboradi — localStorage'dagi tanlov
+    # shu orqali foydalanuvchi profiliga (qurilmalar orasida saqlanadigan
+    # qilib) ko'chiriladi.
+    theme_preference: Optional[str] = Field(default=None)
 
     @field_validator("email")
     @classmethod
@@ -927,6 +1015,17 @@ class ProfileUpdate(BaseModel):
         v = v.strip()
         if not _EMAIL_PATTERN.match(v):
             raise ValueError("email formati noto'g'ri")
+        return v
+
+    @field_validator("theme_preference")
+    @classmethod
+    def _validate_theme_preference(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if v not in THEME_MODES:
+            raise ValueError(
+                f"Noto'g'ri theme_preference — ruxsat etilganlar: {', '.join(THEME_MODES)}"
+            )
         return v
 
 
@@ -1011,6 +1110,7 @@ class ProfileRead(BaseModel):
     last_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    theme_preference: Optional[str] = None
 
 
 class ClinicSettingsRead(BaseModel):
@@ -1042,3 +1142,26 @@ class DangerousActionResult(BaseModel):
     status: str = "ok"
     action_type: str
     message: str
+
+
+# ── Global qidiruv (Prompt 25/3) ─────────────────────────────────────
+class SearchResultItem(BaseModel):
+    """GET /api/search bitta natija qatori — turi (patient/doctor/
+    appointment/payment), ko'rsatiladigan sarlavha/tag matni va
+    bosilganda o'tiladigan sahifa manzili."""
+
+    id: int
+    title: str
+    subtitle: Optional[str] = None
+    url: str
+
+
+class GlobalSearchResponse(BaseModel):
+    """GET /api/search javobi — natijalar turi bo'yicha guruhlangan
+    (dropdown'da alohida bo'limlar sifatida chiziladi)."""
+
+    patients: List[SearchResultItem] = []
+    doctors: List[SearchResultItem] = []
+    appointments: List[SearchResultItem] = []
+    payments: List[SearchResultItem] = []
+

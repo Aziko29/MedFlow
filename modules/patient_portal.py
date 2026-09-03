@@ -114,7 +114,7 @@ def _phone_rate_limited(db: Session, patient_id: int) -> bool:
     """True — shu bemor (patient_id) uchun so'nggi 1 daqiqada/1 soatda
     ruxsat etilgan urinishlar soni allaqachon to'lgan, yangi kod
     yubormaslik kerak."""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     recent = (
         db.query(models.PatientLoginOTP)
         .filter(models.PatientLoginOTP.patient_id == patient_id)
@@ -180,7 +180,7 @@ def request_login_code(
             logger.info("Bemor OTP so'rovi rate-limit qilindi: patient_id=%s", patient.id)
         else:
             code = _generate_code()
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
             otp = models.PatientLoginOTP(
                 patient_id=patient.id,
                 code_hash=_hash_code(code),
@@ -231,12 +231,25 @@ def verify_login_code(
     if otp is None:
         return generic_error
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     if otp.expires_at < now:
         return generic_error
 
     if otp.attempt_count >= MAX_VERIFY_ATTEMPTS:
-        return generic_error
+        # Bu yerda (patient topildi + OTP mavjud + muddati o'tmagan)
+        # generic_error dan FARQLI, aniq xabar qaytariladi — bu
+        # enumeration himoyasini buzmaydi, chunki shu tarmoqqa faqat
+        # haqiqiy bemor uchun, allaqachon MAX_VERIFY_ATTEMPTS marta
+        # (noto'g'ri kod bilan) urinilgandan keyingina yetib boriladi;
+        # "bu telefon raqami tizimda bormi" degan savolga hech qanday
+        # yangi ma'lumot bermaydi. Maqsad — foydalanuvchiga nima
+        # bo'layotganini aniq tushuntirish (yangi kod so'rashi kerak),
+        # eski xulq-atvordagi kabi umumiy "kod noto'g'ri" xabari bilan
+        # chalkashtirmaslik.
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": "Urinishlar soni tugadi, yangi kod so'rang."},
+        )
 
     if not hmac.compare_digest(_hash_code(payload.code.strip()), otp.code_hash):
         otp.attempt_count += 1

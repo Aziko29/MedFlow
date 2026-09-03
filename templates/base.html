@@ -11,12 +11,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/responsive.css">
 <script>
     /* Anti-flicker: <html> ga data-theme sahifa chizilishidan OLDIN o'rnatiladi.
-       localStorage['theme'] = 'light' | 'dark' | 'auto'. Bo'sh bo'lsa — OS
+       localStorage['theme'] = 'light' | 'dark' | 'auto'.
+       🆕 Prompt 21: agar bu brauzerda localStorage hali bo'sh bo'lsa
+       (masalan foydalanuvchi YANGI qurilma/brauzerdan kirgan bo'lsa),
+       serverda saqlangan sozlama (current_user.theme_preference — PUT
+       /settings/profile orqali yozilgan, qarang ThemeController pastda)
+       ishlatiladi — shunda tanlov qurilmalar orasida ham saqlanib
+       qoladi. U ham bo'lmasa (haligacha hech qachon tanlanmagan) OS
        standarti (prefers-color-scheme) ishlatiladi. */
     (function () {
-        var mode = localStorage.getItem('theme') || 'auto';
+        var serverMode = {{ (current_user.theme_preference if current_user else none) | tojson }};
+        var stored = localStorage.getItem('theme');
+        var mode = stored || serverMode || 'auto';
+        if (!stored && serverMode) {
+            // Keyingi tashriflarda ushbu anti-flicker skript to'g'ridan-to'g'ri
+            // localStorage'dan (server javobini kutmasdan) o'qiy olishi uchun.
+            localStorage.setItem('theme', serverMode);
+        }
         var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         var applied = (mode === 'auto') ? (systemDark ? 'dark' : 'light') : mode;
         document.documentElement.setAttribute('data-theme', applied);
@@ -184,6 +198,66 @@
         .content-table tr:hover { background: var(--table-row-hover); }
         .empty-row td { text-align: center; color: var(--text-muted); padding: 24px; }
 
+        /* ── Saralash strelkalari (sort arrows) — Prompt 25/1 ── */
+        .sort-th-link {
+            display: inline-flex; align-items: center; gap: 6px; color: inherit;
+            text-decoration: none; cursor: pointer; user-select: none;
+        }
+        .sort-th-link:hover { color: var(--accent-color); }
+        .sort-th-icon { font-size: 11px; opacity: 0.35; }
+        .sort-th-icon.active { opacity: 1; color: var(--accent-color); }
+
+        /* ── Pagination — Prompt 25/1 ── */
+        .pagination-nav {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px; padding-top: 18px; margin-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+        .pagination-info { font-size: 13px; color: var(--text-secondary); }
+        .pagination-controls { display: flex; align-items: center; gap: 6px; }
+        .pagination-page {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 32px; height: 32px; padding: 0 8px; border-radius: 4px;
+            font-size: 13px; font-weight: 600; color: var(--text-secondary);
+            text-decoration: none; border: 1px solid transparent;
+        }
+        .pagination-page:hover { border-color: var(--border-color); color: var(--text-primary); }
+        .pagination-page.current { background: var(--accent-color); color: #05070d; }
+        .pagination-controls .btn-icon-sm.disabled { opacity: 0.3; pointer-events: none; }
+
+        /* ── Global qidiruv (topbar) — Prompt 25/3 ── */
+        .topbar {
+            display: flex; align-items: center; justify-content: flex-end;
+            padding: 14px 32px; border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+        .global-search { position: relative; width: 340px; max-width: 100%; }
+        .global-search input {
+            width: 100%; padding: 10px 14px 10px 36px; border: 1px solid var(--input-border);
+            border-radius: 4px; font-size: 14px; font-family: inherit;
+            background: var(--input-bg); color: var(--text-primary);
+        }
+        .global-search input:focus { border-color: var(--accent-color); outline: none; box-shadow: var(--glow); }
+        .global-search > i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; }
+        .global-search-dropdown {
+            position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 500;
+            background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.28); max-height: 420px; overflow-y: auto; display: none;
+        }
+        .global-search-dropdown.open { display: block; }
+        .gs-group-label {
+            padding: 8px 14px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.06em; color: var(--text-muted);
+        }
+        .gs-item {
+            display: flex; flex-direction: column; gap: 2px; padding: 9px 14px;
+            text-decoration: none; color: var(--text-primary); cursor: pointer;
+        }
+        .gs-item:hover, .gs-item.active { background: var(--table-row-hover); }
+        .gs-item-title { font-size: 14px; font-weight: 600; }
+        .gs-item-subtitle { font-size: 12px; color: var(--text-secondary); }
+        .gs-empty, .gs-status { padding: 14px; font-size: 13px; color: var(--text-muted); text-align: center; }
+
         .link-name { color: var(--accent-color); text-decoration: none; font-weight: 600; }
         .link-name:hover { text-decoration: underline; text-shadow: var(--glow); }
 
@@ -247,6 +321,13 @@
         .back-link { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); text-decoration: none; margin-bottom: 16px; font-size: 14px; font-weight: 500; transition: color 0.2s; }
         .back-link:hover { color: var(--accent-color); }
 
+        /* 🍞 Breadcrumb navigatsiya (Prompt 23, 2-band) */
+        .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; font-size: 13px; }
+        .breadcrumb-item { color: var(--text-muted); text-decoration: none; font-weight: 500; transition: color 0.2s; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        a.breadcrumb-item:hover { color: var(--accent-color); }
+        .breadcrumb-item.current { color: var(--text-primary); font-weight: 600; cursor: default; }
+        .breadcrumb-sep { color: var(--text-muted); font-size: 10px; opacity: 0.6; }
+
         /* ⌨️ Custom scrollbar */
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: var(--bg-primary); }
@@ -291,6 +372,19 @@
     </style>
 </head>
 <body>
+
+    <!-- 📱 Mobil hamburger tugmasi — faqat <=768px kenglikda ko'rinadi
+         (static/css/responsive.css). Sidebar'ni slide-in qilib ochadi/
+         yopadi (static/js/main.js: MobileSidebarController). -->
+    <button type="button" class="mobile-menu-btn" id="mobileMenuBtn"
+            onclick="toggleMobileSidebar()" aria-label="Menyu"
+            title="Menyu">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+
+    <!-- 📱 Orqa fon qoraytirish — mobil sidebar ochiq bo'lganda uning
+         tashqarisiga bosilsa yopadi. -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
 
     <!-- 📁 Sidebar -->
     <div class="sidebar">
@@ -384,6 +478,22 @@
 
     <!-- 🖥️ Main Content -->
     <div class="main-content">
+        {% if current_user %}
+        <!-- 🔎 Global qidiruv (Prompt 25/3) — bemor/shifokor/qabul/to'lov
+             bo'yicha /api/search?q=... orqali qidiradi, natijalar
+             turkumlangan dropdown'da chiqadi. -->
+        <div class="topbar">
+            <div class="global-search" id="globalSearchWrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="globalSearchInput" autocomplete="off"
+                       placeholder="Umumiy qidiruv: bemor, shifokor, qabul, to'lov..."
+                       oninput="globalSearchOnInput(this)"
+                       onfocus="globalSearchOnFocus(this)"
+                       onkeydown="globalSearchOnKeydown(event)">
+                <div class="global-search-dropdown" id="globalSearchDropdown"></div>
+            </div>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </div>
 
@@ -859,9 +969,27 @@
                 updateToggleUI(applied, mode);
                 updateSettingsUI(mode);
             }
+            function syncModeToServer(mode) {
+                // 🆕 Prompt 21: localStorage BILAN BIRGA foydalanuvchi profiliga
+                // ham yoziladi (User.theme_preference) — shunda tanlov boshqa
+                // qurilma/brauzerda ham saqlanib qoladi. Fon jarayonida ishlaydi:
+                // muvaffaqiyatsiz bo'lsa ham (masalan tarmoq uzilishi) UI'ga
+                // ta'sir qilmaydi — foydalanuvchiga xato ko'rsatilmaydi, faqat
+                // konsolga yoziladi, chunki mavzu allaqachon vizual qo'llanilgan
+                // va localStorage'da saqlangan.
+                if (typeof fetchJSON !== 'function') return;
+                fetchJSON('/settings/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme_preference: mode })
+                }).catch(function (err) {
+                    console.warn("Tema sozlamasini serverga saqlab bo'lmadi:", err);
+                });
+            }
             function setMode(mode) {
                 localStorage.setItem(STORAGE_KEY, mode);
                 apply(mode);
+                syncModeToServer(mode);
             }
             function toggle() {
                 // Tezkor tugma: joriy ko'rinishga qarab light<->dark orasida almashtiradi (auto'ni bekor qiladi)
@@ -945,10 +1073,82 @@
         function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
         function openModal(modalId) { document.getElementById(modalId).style.display = 'flex'; }
 
-        // ── Jadval qidiruvi (client-side, backend so'rov yubormaydi) ──
-        // Har bir jadval qatoridagi butun matn bo'yicha filtrlaydi. Bo'sh
-        // natija bo'lsa "Hech narsa topilmadi" qatori ko'rsatiladi.
+        // ── Prompt 25/2: joriy foydalanuvchi (rol, doctor_id) — AJAX orqali
+        // qayta chizilgan jadval qatorlarida amallar tugmalarini (dastlabki
+        // Jinja shart bilan bir xil mantiqda) ko'rsatish/yashirish uchun
+        // kerak, chunki JS'da current_user obyektiga to'g'ridan-to'g'ri
+        // kirish yo'q.
+        window.CURRENT_USER = {{ ({"role": current_user.role, "doctor_id": current_user.doctor_id} if current_user else {}) | tojson }};
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function formatNumber(n) { return Number(n || 0).toLocaleString('en-US'); }
+        function formatDateTime(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            const p = (x) => String(x).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+        function calcAge(birthDateStr) {
+            if (!birthDateStr) return null;
+            const b = new Date(birthDateStr);
+            const today = new Date();
+            let age = today.getFullYear() - b.getFullYear();
+            if (today.getMonth() < b.getMonth() || (today.getMonth() === b.getMonth() && today.getDate() < b.getDate())) age -= 1;
+            return age;
+        }
+
+        // ── Prompt 25/2: Jadval qidiruvi — endi backend API'ga (Prompt 24:
+        // /api/patients/list, /api/appointments/list, /api/payments/list)
+        // fetch so'rov yuboradi (avvalgi versiya faqat DOM qatorlarini
+        // yashirar/ko'rsatardi, joriy sahifadagi 20 tadan tashqarisini hech
+        // qachon topa olmasdi). Har bir jadval uchun konfiguratsiya
+        // TABLE_AJAX_CONFIG'da, umumiy fetch/render mantig'i esa bitta joyda.
+        const TABLE_AJAX_CONFIG = {
+            patientsTableBody: {
+                endpoint: '/api/patients/list', tableId: 'patientsTable', navId: 'patientsPaginationNav',
+                renderRow: renderPatientRow, colspan: 7, emptyText: "Hozircha bemorlar yo'q",
+            },
+            appointmentsTableBody: {
+                endpoint: '/api/appointments/list', tableId: 'appointmentsTable', navId: 'appointmentsPaginationNav',
+                renderRow: renderAppointmentRow, colspan: 8, emptyText: 'Hozircha qabullar yo\'q',
+            },
+            paymentsTableBody: {
+                endpoint: '/api/payments/list', tableId: 'paymentsTable', navId: 'paymentsPaginationNav',
+                renderRow: renderPaymentRow, colspan: 8, emptyText: "Hozircha to'lovlar yo'q",
+            },
+        };
+        // Har bir jadval uchun joriy sahifa/so'rov holati (qidiruvda 1-sahifaga qaytadi).
+        const TABLE_AJAX_STATE = {};
+        const TABLE_AJAX_DEBOUNCE = {};
+
+        function tableAjaxState(tableBodyId) {
+            if (!TABLE_AJAX_STATE[tableBodyId]) TABLE_AJAX_STATE[tableBodyId] = { search: '', page: 1 };
+            return TABLE_AJAX_STATE[tableBodyId];
+        }
+
         function filterTable(inputEl, tableBodyId) {
+            // doctors/users kabi jadvallar hali backend API'ga o'tkazilmagan
+            // (bu Prompt faqat patients/appointments/payments'ni qamraydi) —
+            // ular uchun eski client-side (faqat joriy DOM qatorlarini
+            // yashiruvchi) mantiq saqlanib qoladi.
+            if (!TABLE_AJAX_CONFIG[tableBodyId]) {
+                filterTableClientSide(inputEl, tableBodyId);
+                return;
+            }
+            const state = tableAjaxState(tableBodyId);
+            state.search = inputEl.value.trim();
+            state.page = 1; // yangi qidiruvda birinchi sahifadan boshlanadi
+            clearTimeout(TABLE_AJAX_DEBOUNCE[tableBodyId]);
+            // 300ms debounce — har bosilgan tugma sayin so'rov yubormaslik uchun.
+            TABLE_AJAX_DEBOUNCE[tableBodyId] = setTimeout(() => fetchAndRenderTable(tableBodyId), 300);
+        }
+
+        function filterTableClientSide(inputEl, tableBodyId) {
             const query = inputEl.value.trim().toLowerCase();
             const tbody = document.getElementById(tableBodyId);
             if (!tbody) return;
@@ -973,6 +1173,277 @@
                 noResultsRow.style.display = 'none';
             }
         }
+
+        async function fetchAndRenderTable(tableBodyId) {
+            const cfg = TABLE_AJAX_CONFIG[tableBodyId];
+            const tbody = document.getElementById(tableBodyId);
+            if (!cfg || !tbody) return;
+            const state = tableAjaxState(tableBodyId);
+            const table = document.getElementById(cfg.tableId);
+            const sortBy = (table && table.dataset.sortBy) || 'id';
+            const sortOrder = (table && table.dataset.sortOrder) || 'desc';
+
+            const params = new URLSearchParams({
+                sort_by: sortBy, sort_order: sortOrder, page: String(state.page), page_size: '20',
+            });
+            if (state.search) params.set('search', state.search);
+
+            tbody.style.opacity = '0.5';
+            try {
+                const res = await fetch(`${cfg.endpoint}?${params.toString()}`, { credentials: 'same-origin' });
+                if (!res.ok) throw new Error('So\'rov xatosi: ' + res.status);
+                const data = await res.json();
+                renderTableBody(tableBodyId, cfg, data);
+            } catch (err) {
+                tbody.innerHTML = `<tr class="empty-row"><td colspan="${cfg.colspan}">Qidirishda xatolik yuz berdi</td></tr>`;
+                console.error('Jadval AJAX xatosi:', err);
+            } finally {
+                tbody.style.opacity = '1';
+            }
+        }
+
+        function renderTableBody(tableBodyId, cfg, page) {
+            const tbody = document.getElementById(tableBodyId);
+            if (!page.items || page.items.length === 0) {
+                const text = tableAjaxState(tableBodyId).search ? "Qidiruvga mos natija topilmadi" : cfg.emptyText;
+                tbody.innerHTML = `<tr class="empty-row"><td colspan="${cfg.colspan}">${text}</td></tr>`;
+            } else {
+                tbody.innerHTML = page.items.map(cfg.renderRow).join('');
+            }
+            renderPaginationNav(cfg.navId, tableBodyId, page.page, page.total_pages, page.total);
+        }
+
+        // ── Sahifalash (AJAX) — sahifa raqamlariga bosish to'liq yangilanish
+        // o'rniga fetchAndRenderTable'ni qayta chaqiradi, joriy qidiruv
+        // matnini saqlab qolgan holda.
+        function renderPaginationNav(navId, tableBodyId, page, totalPages, total) {
+            const nav = document.getElementById(navId);
+            if (!nav) return;
+            if (totalPages <= 1) { nav.innerHTML = ''; return; }
+            const startP = Math.max(1, page - 2);
+            const endP = Math.min(totalPages, page + 2);
+            let pagesHtml = '';
+            if (startP > 1) {
+                pagesHtml += `<a href="#" class="pagination-page" data-page="1">1</a>`;
+                if (startP > 2) pagesHtml += `<span class="pagination-page">…</span>`;
+            }
+            for (let p = startP; p <= endP; p++) {
+                pagesHtml += p === page
+                    ? `<span class="pagination-page current">${p}</span>`
+                    : `<a href="#" class="pagination-page" data-page="${p}">${p}</a>`;
+            }
+            if (endP < totalPages) {
+                if (endP < totalPages - 1) pagesHtml += `<span class="pagination-page">…</span>`;
+                pagesHtml += `<a href="#" class="pagination-page" data-page="${totalPages}">${totalPages}</a>`;
+            }
+            const prevHtml = page > 1
+                ? `<a href="#" class="btn-icon-sm" data-page="${page - 1}" title="Oldingi sahifa"><i class="fa-solid fa-chevron-left"></i></a>`
+                : `<span class="btn-icon-sm disabled"><i class="fa-solid fa-chevron-left"></i></span>`;
+            const nextHtml = page < totalPages
+                ? `<a href="#" class="btn-icon-sm" data-page="${page + 1}" title="Keyingi sahifa"><i class="fa-solid fa-chevron-right"></i></a>`
+                : `<span class="btn-icon-sm disabled"><i class="fa-solid fa-chevron-right"></i></span>`;
+            nav.innerHTML = `<div class="pagination-nav">
+                <div class="pagination-info">Jami: ${total} ta — ${page}/${totalPages}-sahifa</div>
+                <div class="pagination-controls">${prevHtml}${pagesHtml}${nextHtml}</div>
+            </div>`;
+            nav.querySelectorAll('[data-page]').forEach((el) => {
+                el.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    tableAjaxState(tableBodyId).page = parseInt(el.dataset.page, 10);
+                    fetchAndRenderTable(tableBodyId);
+                });
+            });
+        }
+
+        // ── Har bir jadval uchun qator render funksiyasi — mos ravishda
+        // patients.html / appointments.html / payments.html Jinja qatoriga
+        // ustun-ustun mos keladi, faqat amallar tugmalari CURRENT_USER
+        // orqali (rol asosida) shartli ko'rsatiladi.
+        function renderPatientRow(p) {
+            const age = calcAge(p.birth_date);
+            const avatar = p.photo_path
+                ? `<div class="patient-avatar-sm" style="background-image: url('${escapeHtml(p.photo_path)}');"></div>`
+                : `<div class="patient-avatar-sm">${escapeHtml((p.fullname || '?')[0].toUpperCase())}</div>`;
+            const genderText = p.gender === 'M' ? 'Erkak' : (p.gender === 'F' ? 'Ayol' : '—');
+            const canManage = ['admin', 'reception'].includes(window.CURRENT_USER.role);
+            let actionsTd = '';
+            if (canManage) {
+                const payload = escapeHtml(JSON.stringify({
+                    id: p.id, fullname: p.fullname, phone: p.phone, gender: p.gender,
+                    birth_date: p.birth_date || '', address: p.address, medical_notes: p.medical_notes,
+                    blood_type: p.blood_type, emergency_contact_name: p.emergency_contact_name,
+                    emergency_contact_phone: p.emergency_contact_phone,
+                }));
+                actionsTd = `<td class="row-actions">
+                    <button class="btn-icon-sm" title="Tahrirlash" onclick='openPatientEditModal(JSON.parse(this.dataset.p))' data-p="${payload}"><i class="fa-solid fa-pen"></i></button>
+                    ${window.CURRENT_USER.role === 'admin' ? `<button class="btn-icon-sm danger" title="O'chirish" onclick="deletePatient(${p.id})"><i class="fa-solid fa-trash"></i></button>` : ''}
+                </td>`;
+            }
+            return `<tr>
+                <td>#${p.id}</td>
+                <td><div class="patient-row-name">${avatar}<a class="link-name" href="/patients/${p.id}">${escapeHtml(p.fullname)}</a></div></td>
+                <td>${escapeHtml(p.phone)}</td>
+                <td>${genderText}</td>
+                <td>${age !== null ? age : '—'}</td>
+                <td>${formatDateTime(p.created_at)}</td>
+                ${actionsTd}
+            </tr>`;
+        }
+
+        function renderAppointmentRow(a) {
+            const canChangeStatus = ['admin', 'reception'].includes(window.CURRENT_USER.role)
+                || (window.CURRENT_USER.role === 'doctor' && window.CURRENT_USER.doctor_id === a.doctor_id);
+            let statusTd;
+            if (['completed', 'cancelled', 'no_show'].includes(a.status) || !canChangeStatus) {
+                statusTd = `<span class="status-badge status-${a.status}">${a.status}</span>`;
+            } else {
+                let opts = `<option value="${a.status}" selected>${a.status} (joriy)</option>`;
+                if (a.status === 'waiting') {
+                    opts += `<option value="in_progress">Xonaga kirdi</option><option value="delayed">Kechikayapti</option><option value="no_show">Kelmadi</option>`;
+                } else if (a.status === 'delayed') {
+                    opts += `<option value="waiting">Kutmoqda</option><option value="in_progress">Xonaga kirdi</option><option value="no_show">Kelmadi</option>`;
+                } else if (a.status === 'in_progress') {
+                    opts += `<option value="completed" ${a.debt > 0 ? 'disabled' : ''}>Tugadi${a.debt > 0 ? " (avval to'lov kerak)" : ''}</option><option value="delayed">Kechikayapti</option>`;
+                }
+                statusTd = `<select class="status-select" onchange="updateAppointmentStatus(${a.id}, this.value)">${opts}</select>`;
+            }
+            let actions = '';
+            if (a.debt > 0 && ['admin', 'reception', 'cashier'].includes(window.CURRENT_USER.role) && a.status !== 'cancelled') {
+                actions += `<button class="btn-icon-sm" title="To'lov qabul qilish" onclick="openPaymentModal(${a.id})"><i class="fa-solid fa-money-bill"></i></button>`;
+            }
+            if (!['completed', 'cancelled', 'no_show'].includes(a.status) && ['admin', 'reception'].includes(window.CURRENT_USER.role)) {
+                actions += `<button class="btn-icon-sm" title="Vaqtini ko'chirish" onclick='openAppointmentRescheduleModal(${a.id}, ${JSON.stringify(a.scheduled_time)})'><i class="fa-solid fa-clock-rotate-left"></i></button>
+                    <button class="btn-icon-sm danger" title="Bekor qilish" onclick="openAppointmentCancelModal(${a.id})"><i class="fa-solid fa-ban"></i></button>`;
+            }
+            return `<tr>
+                <td>#${a.id}</td>
+                <td><a class="link-name" href="/patients/${a.patient_id}">${escapeHtml(a.patient_name)}</a></td>
+                <td><a class="link-name" href="/doctors/${a.doctor_id}">${escapeHtml(a.doctor_name)}</a></td>
+                <td><i class="far fa-clock"></i> ${formatDateTime(a.scheduled_time)}</td>
+                <td>${formatNumber(a.price)}</td>
+                <td class="${a.debt > 0 ? 'debt-positive' : 'debt-zero'}">${formatNumber(a.debt)}</td>
+                <td>${statusTd}</td>
+                <td class="row-actions">${actions}</td>
+            </tr>`;
+        }
+
+        function renderPaymentRow(pay) {
+            let typeBadge;
+            if (pay.is_refund) typeBadge = `<span class="status-badge status-cancelled">Qaytarim</span>`;
+            else if (pay.is_refunded) typeBadge = `<span class="status-badge status-cancelled">To'lov (qaytarilgan)</span>`;
+            else typeBadge = `<span class="status-badge status-completed">To'lov</span>`;
+            const canManage = ['admin', 'cashier'].includes(window.CURRENT_USER.role);
+            let actionsTd = '';
+            if (canManage) {
+                const btn = (!pay.is_refund && !pay.is_refunded)
+                    ? `<button class="btn-icon-sm danger" title="Qaytarish" onclick="refundPayment(${pay.id})"><i class="fa-solid fa-rotate-left"></i></button>` : '';
+                actionsTd = `<td class="row-actions">${btn}</td>`;
+            }
+            return `<tr>
+                <td>#${pay.id}</td>
+                <td><a class="link-name" href="/patients/${pay.patient_id}">${escapeHtml(pay.patient_name)}</a></td>
+                <td>#${pay.appointment_id}</td>
+                <td>${formatNumber(pay.amount)}</td>
+                <td>${typeBadge}</td>
+                <td>${pay.note ? escapeHtml(pay.note) : '—'}</td>
+                <td>${formatDateTime(pay.created_at)}</td>
+                ${actionsTd}
+            </tr>`;
+        }
+
+        // ── Global qidiruv (Prompt 25/3) — topbar input, /api/search?q=...
+        // ga so'rov yuboradi, natijalarni turkumlangan dropdown'da ko'rsatadi.
+        const GLOBAL_SEARCH_GROUPS = [
+            { key: 'patients', label: 'Bemorlar', icon: 'fa-user-injured' },
+            { key: 'doctors', label: 'Shifokorlar', icon: 'fa-user-doctor' },
+            { key: 'appointments', label: 'Qabullar', icon: 'fa-calendar-check' },
+            { key: 'payments', label: "To'lovlar", icon: 'fa-credit-card' },
+        ];
+        let globalSearchDebounce = null;
+        let globalSearchAbort = null;
+        let globalSearchLastQuery = '';
+
+        function globalSearchOnInput(inputEl) {
+            const q = inputEl.value.trim();
+            clearTimeout(globalSearchDebounce);
+            if (q.length < 2) {
+                globalSearchRenderStatus(q.length === 0 ? '' : "Kamida 2 ta belgi kiriting");
+                return;
+            }
+            globalSearchRenderStatus('Qidirilmoqda...');
+            globalSearchDebounce = setTimeout(() => globalSearchFetch(q), 300);
+        }
+
+        function globalSearchOnFocus(inputEl) {
+            if (inputEl.value.trim().length >= 2) {
+                document.getElementById('globalSearchDropdown').classList.add('open');
+            }
+        }
+
+        function globalSearchOnKeydown(event) {
+            if (event.key === 'Escape') {
+                document.getElementById('globalSearchDropdown').classList.remove('open');
+                event.target.blur();
+            }
+        }
+
+        function globalSearchRenderStatus(text) {
+            const dropdown = document.getElementById('globalSearchDropdown');
+            if (!text) { dropdown.classList.remove('open'); dropdown.innerHTML = ''; return; }
+            dropdown.innerHTML = `<div class="gs-status">${escapeHtml(text)}</div>`;
+            dropdown.classList.add('open');
+        }
+
+        async function globalSearchFetch(q) {
+            globalSearchLastQuery = q;
+            if (globalSearchAbort) globalSearchAbort.abort();
+            globalSearchAbort = new AbortController();
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+                    credentials: 'same-origin', signal: globalSearchAbort.signal,
+                });
+                if (!res.ok) throw new Error('So\'rov xatosi: ' + res.status);
+                const data = await res.json();
+                // Foydalanuvchi shu orada yana yozgan bo'lsa, eskirgan javobni chizmaymiz.
+                if (q !== globalSearchLastQuery) return;
+                globalSearchRender(data);
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                globalSearchRenderStatus('Qidirishda xatolik yuz berdi');
+                console.error('Global qidiruv xatosi:', err);
+            }
+        }
+
+        function globalSearchRender(data) {
+            const dropdown = document.getElementById('globalSearchDropdown');
+            const totalCount = GLOBAL_SEARCH_GROUPS.reduce((sum, g) => sum + (data[g.key] || []).length, 0);
+            if (totalCount === 0) {
+                dropdown.innerHTML = `<div class="gs-empty">Hech narsa topilmadi</div>`;
+                dropdown.classList.add('open');
+                return;
+            }
+            let html = '';
+            GLOBAL_SEARCH_GROUPS.forEach((g) => {
+                const items = data[g.key] || [];
+                if (items.length === 0) return;
+                html += `<div class="gs-group-label"><i class="fa-solid ${g.icon}"></i> ${g.label}</div>`;
+                items.forEach((item) => {
+                    html += `<a class="gs-item" href="${item.url}">
+                        <span class="gs-item-title">${escapeHtml(item.title)}</span>
+                        ${item.subtitle ? `<span class="gs-item-subtitle">${escapeHtml(item.subtitle)}</span>` : ''}
+                    </a>`;
+                });
+            });
+            dropdown.innerHTML = html;
+            dropdown.classList.add('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('globalSearchWrap');
+            if (wrap && !wrap.contains(e.target)) {
+                document.getElementById('globalSearchDropdown').classList.remove('open');
+            }
+        });
 
         // ── Select ichidagi variantlarni matn bo'yicha filtrlash (qidiruv) ──
         // <select>ning o'zi (id va value semantikasi) o'zgarmaydi — faqat
@@ -1638,6 +2109,7 @@
          (ThemeController hamon shu faylda, yuqorida — anti-flicker talab
          qilgani uchun asosiy sahifa skriptida qoladi; SidebarController
          esa flicker-siz, chunki uning ham anti-flicker qismi <head>da). -->
+    <script src="/static/js/password-toggle.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

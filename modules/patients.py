@@ -15,16 +15,18 @@ import os
 import time
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy import false as sa_false
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Query as SAQuery, Session, joinedload
 
 import models
 import schemas
 from audit import log_action
 from auth import get_current_user, require_role
 from database import get_db
+from model_utils import apply_update
 
 # 🖼️ Bemor rasmi — yuklash cheklovlari va saqlash joyi.
 # Loyiha ildizi: bu fayl <root>/modules/patients.py'da yotadi, shuning
@@ -80,7 +82,16 @@ def compute_financials(db: Session, patient_id: int) -> schemas.PatientFinancial
 
 
 def _get_patient_or_404(db: Session, patient_id: int) -> models.Patient:
-    patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+    """Soft-delete qilingan (is_deleted=True) bemorlar bu yerda "yo'q"
+    deb hisoblanadi — allaqachon o'chirilgan bemorni tahrirlash/ko'rish/
+    yana o'chirishga urinish oddiy 404 qaytaradi, xuddi u haqiqatan ham
+    DB'da bo'lmagandek (garchi qator moliyaviy/tibbiy tarix uchun
+    jismonan saqlanib qolsa ham)."""
+    patient = (
+        db.query(models.Patient)
+        .filter(models.Patient.id == patient_id, models.Patient.is_deleted.is_(False))
+        .first()
+    )
     if patient is None:
         raise HTTPException(status_code=404, detail="Bemor topilmadi")
     return patient
@@ -112,56 +123,47 @@ def add_patient(
     return new_patient
 
 
-@router.get("/list", response_model=List[schemas.PatientRead])
-def list_patients(
-    db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+# Prompt 24: sort_by uchun ruxsat etilgan ustunlar allowlist'i — xom
+# `sort_by` matnini to'g'ridan-to'g'ri `getattr(models.Patient, ...)`ga
+# uzatish SQL-injection emas (SQLAlchemy ustun obyektiga aylantiradi),
+# lekin ixtiyoriy/shifrlangan/mavjud bo'lmagan ustunlarga sort qilishga
+# yo'l qo'ymaslik uchun baribir allowlist kerak (masalan `phone` —
+# EncryptedString, ciphertext bo'yicha "sort" ma'nosiz bo'lardi).
+_PATIENT_SORT_COLUMNS = {
+    "id": models.Patient.id,
+    "fullname": models.Patient.fullname,
+    "created_at": models.Patient.created_at,
+    "birth_date": models.Patient.birth_date,
+}
+
+
+def _patients_base_query(
+    db: Session,
+    user: models.User,
     allergy: Optional[str] = None,
     chronic_condition: Optional[str] = None,
-) -> List[models.Patient]:
-    """Barcha bemorlar ro'yxati.
+    search: Optional[str] = None,
+) -> SAQuery:
+    """Umumiy filtrlash mantig'i — sahifalangan API (``list_patients``)
+    va to'liq (sahifalanmagan, server-render HTML sahifalari uchun)
+    ro'yxat (``list_patients_all``) shu yerdan foydalanadi, mantiq
+    ikki joyda takrorlanmasligi uchun.
 
-    Ixtiyoriy query-parametrlar orqali filtrlash mumkin (4-band):
-      - ``allergy=<matn>``            — Allergy.substance bo'yicha
-        (LIKE, katta-kichik harflarga sezgir emas)
-      - ``chronic_condition=<matn>``  — ChronicCondition.name bo'yicha
-        (xuddi shunday)
-
-    Ikkalasi ham berilsa AND mantig'ida qo'llaniladi. Har biri alohida
-    EXISTS-uslubidagi subquery (``Patient.id.in_(...)``) sifatida
-    qo'llanadi — ``patients`` bilan ``allergies``/``chronic_conditions``ni
-    to'g'ridan-to'g'ri JOIN qilish o'rniga, chunki bitta bemorning bir
-    nechta allergiyasi/kasalligi bo'lishi mumkin va JOIN natijada bemorni
-    bir necha marta takrorlab yuborardi (dublikat qatorlar).
-
-    🔐 Bu ikki filtr tibbiy ma'lumot (kim qanday allergiya/kasallikka ega
-    ekanini oshkor qiladi), shuning uchun faqat admin/reception/doctor
-    ishlata oladi — cashier hatto natijada allergiya matni ko'rsatilmasa
-    ham, "qaysi bemorlar filtrga mos keldi" degan yon-kanal orqali tibbiy
-    ma'lumotni bilib olmasligi kerak (medical-security-auditor: least
-    privilege / data leakage oldini olish).
+    ``search`` faqat ``fullname`` bo'yicha ishlaydi — ``phone`` va
+    boshqa PII maydonlar EncryptedString bo'lib, DB darajasida ILIKE
+    bilan qidirib bo'lmaydi (shifrlangan holda saqlanadi).
     """
-    if (allergy or chronic_condition) and user.role not in (
-        "admin",
-        "reception",
-        "doctor",
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Bu filtr faqat admin/reception/doctor uchun ruxsat etilgan (tibbiy ma'lumot)",
-        )
-
     query = db.query(models.Patient)
 
-    # ⬅️ YANGI: lab_doctor faqat O'ZIGA biriktirilgan bemorlarni ko'radi —
+    # ⬅️ lab_doctor faqat O'ZIGA biriktirilgan bemorlarni ko'radi —
     # "biriktirilgan" LabResult.doctor_id == user.doctor_id orqali
-    # aniqlanadi ("doctor" roli uchun ishlatiladigan User.doctor_id bilan
-    # bir xil bog'lanish naqshi). doctor_id sozlanmagan bo'lsa (nazariy
-    # holat), bo'sh ro'yxat qaytariladi — boshqa lab shifokorlarining
-    # bemorlari sizib chiqmasligi kerak.
+    # aniqlanadi. doctor_id sozlanmagan bo'lsa (nazariy holat), har doim
+    # bo'sh natija qaytishi kerak — shuning uchun butunlay yolg'on
+    # filtr (`false()`) qo'llanadi, boshqa lab shifokorlarining
+    # bemorlari sizib chiqmasligi uchun.
     if user.role == "lab_doctor":
         if user.doctor_id is None:
-            return []
+            return query.filter(sa_false())
         query = query.filter(
             models.Patient.id.in_(
                 db.query(models.LabResult.patient_id).filter(
@@ -186,7 +188,87 @@ def list_patients(
                 )
             )
         )
-    return query.order_by(models.Patient.id.desc()).all()
+    if search:
+        query = query.filter(models.Patient.fullname.ilike(f"%{search}%"))
+    return query
+
+
+@router.get("/list", response_model=schemas.PatientPage)
+def list_patients(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+    allergy: Optional[str] = None,
+    chronic_condition: Optional[str] = None,
+    search: Optional[str] = Query(None, description="F.I.O bo'yicha qidirish (ILIKE)"),
+    sort_by: str = Query("id", description="id | fullname | created_at | birth_date"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+) -> schemas.PatientPage:
+    """Barcha bemorlar ro'yxati — sahifalangan, saralangan va qidiruvli
+    (Prompt 24).
+
+    Ixtiyoriy query-parametrlar orqali filtrlash mumkin (4-band):
+      - ``allergy=<matn>``            — Allergy.substance bo'yicha
+        (LIKE, katta-kichik harflarga sezgir emas)
+      - ``chronic_condition=<matn>``  — ChronicCondition.name bo'yicha
+        (xuddi shunday)
+
+    🔐 Bu ikki filtr tibbiy ma'lumot (kim qanday allergiya/kasallikka ega
+    ekanini oshkor qiladi), shuning uchun faqat admin/reception/doctor
+    ishlata oladi — cashier hatto natijada allergiya matni ko'rsatilmasa
+    ham, "qaysi bemorlar filtrga mos keldi" degan yon-kanal orqali tibbiy
+    ma'lumotni bilib olmasligi kerak (medical-security-auditor: least
+    privilege / data leakage oldini olish).
+    """
+    if (allergy or chronic_condition) and user.role not in (
+        "admin",
+        "reception",
+        "doctor",
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Bu filtr faqat admin/reception/doctor uchun ruxsat etilgan (tibbiy ma'lumot)",
+        )
+
+    query = _patients_base_query(db, user, allergy, chronic_condition, search)
+
+    sort_column = _PATIENT_SORT_COLUMNS.get(sort_by, models.Patient.id)
+    sort_column = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+
+    total = query.count()
+    # models.Patient.id.desc() — barqaror ikkinchi tartib mezoni: `sort_by`
+    # ustunida bir xil qiymat (masalan bir kunda yaratilgan ko'p bemor)
+    # bo'lganda, DB har sahifani so'rashda qatorlarni har xil tartibda
+    # qaytarishi mumkin — natijada bitta bemor ikki sahifada ham chiqishi
+    # yoki umuman chiqmay qolishi mumkin edi.
+    items = (
+        query.order_by(sort_column, models.Patient.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return schemas.PatientPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=max((total + page_size - 1) // page_size, 1),
+    )
+
+
+def list_patients_all(
+    db: Session,
+    user: models.User,
+    allergy: Optional[str] = None,
+    chronic_condition: Optional[str] = None,
+) -> List[models.Patient]:
+    """To'liq (sahifalanmagan) bemorlar ro'yxati — server-render
+    HTML sahifalari (main.py :: patients_page, appointments_page) uchun.
+    API endpoint EMAS, oddiy Python funksiyasi sifatida chaqiriladi."""
+    return _patients_base_query(db, user, allergy, chronic_condition).order_by(
+        models.Patient.id.desc()
+    ).all()
 
 
 # ── Palata (statsionar davolash, Prompt 7) ──────────────────────────
@@ -242,9 +324,17 @@ def list_rooms(db: Session = Depends(get_db)) -> List[schemas.RoomGroup]:
 def get_patient(patient_id: int, db: Session = Depends(get_db)) -> schemas.PatientDetail:
     patient = _get_patient_or_404(db, patient_id)
     financials = compute_financials(db, patient_id)
+    # 🛏️ Prompt 10 — to'liq yotqizilishlar tarixi. `patient.admissions`
+    # relationship'i models.py'da `order_by="PatientAdmission.admitted_at.desc()"`
+    # bilan e'lon qilingan, shuning uchun bu yerda qo'shimcha saralash
+    # shart emas — eng yangi epizod avtomatik birinchi bo'lib keladi.
+    admissions = [
+        schemas.PatientAdmissionRead.model_validate(a) for a in patient.admissions
+    ]
     return schemas.PatientDetail(
         **schemas.PatientRead.model_validate(patient).model_dump(),
         financials=financials,
+        admissions=admissions,
     )
 
 
@@ -260,8 +350,7 @@ def update_patient(
     user: models.User = Depends(get_current_user),
 ) -> models.Patient:
     patient = _get_patient_or_404(db, patient_id)
-    for field, value in patient_data.model_dump().items():
-        setattr(patient, field, value)
+    apply_update(patient, patient_data)
     try:
         db.commit()
     except IntegrityError:
@@ -282,9 +371,26 @@ def delete_patient(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ) -> None:
+    """🗑️ Soft Delete (Prompt 6): bemor DB'dan jismonan o'chirilmaydi —
+    faqat `is_deleted=True` va `deleted_at=hozir` qilib belgilanadi.
+
+    Bu Prompt 5'dagi "bog'liq yozuvlar bor bemorni o'chirib bo'lmaydi"
+    (409) tekshiruvidan ham xavfsizroq: u yerda ham hali xato bilan
+    hard-delete qilinishi (yoki kelajakda tekshiruv chetlab o'tilishi)
+    mumkin edi, endi esa Patient qatorining o'zi hech qachon
+    o'chirilmagani uchun uning appointments/payments/lab_results
+    tarixi doim, har qanday holatda ham saqlanib qoladi — shuning
+    uchun bog'liqliklarni sanab, 409 qaytarishga endi ehtiyoj yo'q.
+
+    `_get_patient_or_404` allaqachon `is_deleted=False` bilan
+    filtrlagani uchun ikki marta o'chirishga urinish avtomatik ravishda
+    404 qaytaradi (idempotent emas — bemor "allaqachon o'chirilgan"
+    holatda "topilmadi" sifatida ko'rinadi)."""
     patient = _get_patient_or_404(db, patient_id)
+
     fullname = patient.fullname
-    db.delete(patient)  # cascade removes their appointments + payments too
+    patient.is_deleted = True
+    patient.deleted_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     db.commit()
     log_action(db, user, "patient.delete", "Patient", patient_id, f"fullname={fullname}")
     return None
@@ -411,8 +517,24 @@ def admit_patient(
             detail=f"{admit_data.room_number}-palata band ({occupied_by.fullname})",
         )
 
+    admitted_at = admit_data.admitted_at or datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+    # 🛏️ Prompt 10 bag-fix: avval bu yerda Patient'ning joriy-holat
+    # ustunlari (quyida) ustiga to'g'ridan-to'g'ri yozib yuborilardi —
+    # bemor chiqarilib qayta yotqizilganda oldingi epizodning
+    # discharged_at/room_number'i saqlanmasdi. Endi HAR bir yotqizilish
+    # uchun alohida PatientAdmission qatori OCHILADI (tarix
+    # yo'qolmaydi); Patient'dagi ustunlar esa hamon "hozir kim
+    # palatada" tezkor so'roviga xizmat qilib qoladi.
+    admission = models.PatientAdmission(
+        patient_id=patient.id,
+        room_number=admit_data.room_number,
+        admitted_at=admitted_at,
+    )
+    db.add(admission)
+
     patient.room_number = admit_data.room_number
-    patient.admitted_at = admit_data.admitted_at or datetime.datetime.utcnow()
+    patient.admitted_at = admitted_at
     patient.discharged_at = None
     patient.is_admitted = True
     db.commit()
@@ -445,7 +567,26 @@ def discharge_patient(
     if not patient.is_admitted:
         raise HTTPException(status_code=409, detail="Bemor hozir palatada emas")
 
-    patient.discharged_at = discharge_data.discharged_at or datetime.datetime.utcnow()
+    discharged_at = discharge_data.discharged_at or datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+    # 🛏️ Prompt 10 bag-fix: joriy OCHIQ (discharged_at IS NULL) admission
+    # qatorini topib, aynan o'sha yozuvga discharged_at/discharged_reason
+    # yoziladi — Patient ustunlariga yozib qo'ya qolish o'rniga, shu
+    # tarix qatorining o'zi yopiladi va boshqa hech narsa o'zgarmaydi.
+    open_admission = (
+        db.query(models.PatientAdmission)
+        .filter(
+            models.PatientAdmission.patient_id == patient.id,
+            models.PatientAdmission.discharged_at.is_(None),
+        )
+        .order_by(models.PatientAdmission.admitted_at.desc())
+        .first()
+    )
+    if open_admission is not None:
+        open_admission.discharged_at = discharged_at
+        open_admission.discharged_reason = discharge_data.discharged_reason
+
+    patient.discharged_at = discharged_at
     patient.is_admitted = False
     db.commit()
     db.refresh(patient)

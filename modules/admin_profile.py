@@ -103,7 +103,7 @@ def update_admin_profile(
     settings = _get_settings(db)
     for field, value in profile_data.model_dump().items():
         setattr(settings, field, value)
-    settings.updated_at = datetime.datetime.utcnow()
+    settings.updated_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(settings)
     log_action(db, user, "admin_profile.update", "AdminProfileSettings", settings.id, "clinic info updated")
@@ -143,7 +143,7 @@ def add_position(
         _find_department(settings, position_data.department_id)
 
     new_id = settings.next_position_id
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     item = {
         "id": new_id,
         "title": position_data.title,
@@ -194,7 +194,7 @@ def update_position(
     #   bo'sh -> band   : vacant_since = None
     #   o'zgarmagan     : eski qiymat saqlanadi
     if was_occupied and not now_occupied:
-        vacant_since = datetime.datetime.utcnow().isoformat()
+        vacant_since = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat()
     elif not was_occupied and now_occupied:
         vacant_since = None
     else:

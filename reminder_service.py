@@ -33,7 +33,7 @@ import os
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 import httpx
@@ -44,6 +44,7 @@ import models
 from audit import log_action
 from crypto_fields import blind_index
 from database import SessionLocal
+from utils.timezone import get_clinic_timezone, now_in_clinic_tz
 
 logger = logging.getLogger("medflow.reminders")
 
@@ -723,15 +724,20 @@ def _appointment_detail_text(lang: str, appt: "models.Appointment") -> str:
     return t(lang, "appt_detail", doctor=doctor_name, when=when, status=status, price=price)
 
 
-def _build_ics(appt: "models.Appointment") -> bytes:
-    """Minimal .ics (RFC 5545) fayl — floating local vaqt bilan (TZID
-    ishlatilmaydi, chunki server DBda scheduled_time naive datetime sifatida
-    saqlanadi — klinika lokal vaqti deb qabul qilinadi). Odatiy kalendar
-    ilovalari buni qurilma vaqt zonasida ko'rsatadi."""
-    start = appt.scheduled_time
-    end = start + timedelta(minutes=30)
+def _build_ics(appt: "models.Appointment", db=None) -> bytes:
+    """Minimal .ics (RFC 5545) fayl — DTSTART/DTEND endi UTC (Z-suffiks)
+    formatida yoziladi. appt.scheduled_time DBda naive datetime sifatida,
+    klinika LOKAL devor-vaqti sifatida saqlanadi (utils/timezone.py'dagi
+    izohga qarang), shu sababli avval uni klinika vaqt zonasiga bog'lab,
+    keyin UTC ga konvertatsiya qilamiz — turli qurilma/kalendar
+    ilovalarida noto'g'ri ko'rsatilishining oldini olish uchun."""
+    clinic_tz = get_clinic_timezone(db)
+    start_local = appt.scheduled_time.replace(tzinfo=clinic_tz)
+    end_local = (appt.scheduled_time + timedelta(minutes=30)).replace(tzinfo=clinic_tz)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
     doctor_name = appt.doctor.fullname if appt.doctor else "Shifokor"
-    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -739,8 +745,8 @@ def _build_ics(appt: "models.Appointment") -> bytes:
         "BEGIN:VEVENT",
         f"UID:appointment-{appt.id}@{CLINIC_NAME.lower().replace(' ', '')}",
         f"DTSTAMP:{dtstamp}",
-        f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
-        f"DTEND:{end.strftime('%Y%m%dT%H%M%S')}",
+        f"DTSTART:{start_utc.strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTEND:{end_utc.strftime('%Y%m%dT%H%M%SZ')}",
         f"SUMMARY:{CLINIC_NAME} — {doctor_name}",
         f"DESCRIPTION:Navbat #{appt.id}",
         "END:VEVENT",
@@ -776,7 +782,7 @@ def _free_slots_for_day(db, doctor: "models.Doctor", day: date, exclude_appt_id:
         booked_q = booked_q.filter(models.Appointment.id != exclude_appt_id)
     booked_times = {row[0] for row in booked_q.all()}
 
-    now = datetime.now()
+    now = now_in_clinic_tz(db)
     min_start = now + timedelta(minutes=15)  # bugungi kunga juda yaqin vaqtga yozilmasin
     slots = []
     cursor = day_start
@@ -797,7 +803,7 @@ def check_and_send_reminders() -> None:
 
     db = SessionLocal()
     try:
-        now = datetime.now()
+        now = now_in_clinic_tz(db)
         active_statuses = ("waiting", "in_progress", "delayed")
         horizon = now + timedelta(hours=MAX_REMINDER_HOURS)
 
@@ -858,7 +864,7 @@ def _active_appointments(db, patient_id: int) -> list:
         .filter(
             models.Appointment.patient_id == patient_id,
             models.Appointment.status.in_(("waiting", "in_progress", "delayed")),
-            models.Appointment.scheduled_time >= datetime.now(),
+            models.Appointment.scheduled_time >= now_in_clinic_tz(db),
         )
         .order_by(models.Appointment.scheduled_time.asc())
         .limit(MAX_LISTED_APPOINTMENTS)
@@ -1109,7 +1115,7 @@ def _handle_appt_callback(db, chat_id, message_id, patient, lang, parts, cq_id) 
         return
 
     if sub == "ics":
-        ics_bytes = _build_ics(appt)
+        ics_bytes = _build_ics(appt, db)
         sent = _send_document(chat_id, f"appointment_{appt.id}.ics", ics_bytes, caption=CLINIC_NAME)
         if not sent:
             _answer_callback(cq_id, t(lang, "error_generic"), show_alert=True)

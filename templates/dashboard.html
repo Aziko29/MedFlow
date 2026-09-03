@@ -75,7 +75,7 @@
                 <th>Vaqt</th><th>Qarz (UZS)</th><th>Holat</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="live-queue-body">
             {% for item in queue %}
             <tr>
                 <td>{{ item.id }}</td>
@@ -96,4 +96,63 @@
         </tbody>
     </table>
 </div>
+
+<script>
+(function () {
+    var STATUS_LABEL = {
+        waiting: "Kutmoqda",
+        in_progress: "Xonada",
+        delayed: "Kechikayotgan",
+    };
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+    }
+
+    function renderQueue(items) {
+        var tbody = document.getElementById("live-queue-body");
+        if (!tbody) return;
+        if (!items.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Bugun hech kim navbatda yo\'q</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map(function (item) {
+            var badgeClass = "status-" + item.status;
+            var badgeLabel = STATUS_LABEL[item.status] || escapeHtml(item.status);
+            var debtClass = item.debt > 0 ? "debt-positive" : "debt-zero";
+            return (
+                "<tr>" +
+                "<td>" + escapeHtml(item.id) + "</td>" +
+                '<td><a class="link-name" href="/patients/' + item.patient_id + '">' + escapeHtml(item.patient_name) + "</a></td>" +
+                '<td><a class="link-name" href="/doctors/' + item.doctor_id + '">' + escapeHtml(item.doctor_name) + "</a></td>" +
+                '<td><i class="far fa-clock"></i> ' + escapeHtml(item.time) + "</td>" +
+                '<td class="' + debtClass + '">' + item.debt.toLocaleString() + "</td>" +
+                '<td><span class="status-badge ' + badgeClass + '">' + badgeLabel + "</span></td>" +
+                "</tr>"
+            );
+        }).join("");
+    }
+
+    function connectLiveQueue() {
+        var source = new EventSource("/api/dashboard/queue/stream");
+        source.addEventListener("queue", function (ev) {
+            try {
+                renderQueue(JSON.parse(ev.data));
+            } catch (e) {
+                console.error("live-queue parse error", e);
+            }
+        });
+        source.onerror = function () {
+            // EventSource avtomatik qayta ulanadi; qo'shimcha harakat shart emas.
+        };
+        window.addEventListener("beforeunload", function () { source.close(); });
+    }
+
+    if (document.getElementById("live-queue-body")) {
+        connectLiveQueue();
+    }
+})();
+</script>
 {% endblock %}

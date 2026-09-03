@@ -28,11 +28,15 @@ from audit import log_action
 router = APIRouter(prefix="/lab-results", tags=["Lab Results"])
 templates = Jinja2Templates(directory="templates")
 
-# Prompt 5: modulga faqat doctor va lab_doctor kirita/tahrirlaydi/o'chiradi.
+# Prompt 5: modulga faqat doctor va lab_doctor kirita/o'chiradi.
 # admin faqat ko'rishi mumkin (VIEW_ROLES'da bor, CREATE_ROLES'da yo'q).
 # cashier, reception, assistant_admin — modulga UMUMAN kira olmaydi.
 VIEW_ROLES = ("admin", "doctor", "lab_doctor")
 CREATE_ROLES = ("doctor", "lab_doctor")
+# Prompt 18: TAHRIRLASH uchun admin ham ruxsat etiladi (boshqa faol
+# shifokor nomidan tahrirlash imkoniyati bilan) — lekin YARATISH va
+# O'CHIRISH hamon faqat CREATE_ROLES (doctor/lab_doctor) uchun qoladi.
+EDIT_ROLES = CREATE_ROLES + ("admin",)
 
 
 def _ctx(request: Request, user: models.User, active_page: str, extra: Optional[dict] = None) -> dict:
@@ -214,23 +218,51 @@ def edit_lab_result(
 ):
     """Mavjud tahlil natijasini tahrirlash (ko'rsatkichlarni tuzatish).
     Tahlil turi (shablon) va bemor o'zgartirilmaydi — faqat qiymatlar,
-    izoh, mas'ul shifokor va holat."""
+    izoh, mas'ul shifokor va holat.
+
+    ⬅️ Prompt 18: ikki xil rol, ikki xil huquq bilan bu yerga kirishi
+    mumkin endi:
+      - doctor / lab_doctor: FAQAT o'ziga biriktirilgan natijani
+        tahrirlaydi, mas'ul shifokorni o'zgartira olmaydi — Form
+        orqali kelgan doctor_id e'tiborga olinmaydi (Prompt 5'dagi
+        himoya o'zgarishsiz saqlanadi).
+      - admin: istalgan natijani, istalgan FAOL shifokor nomidan
+        tahrirlashi mumkin — Form orqali kelgan doctor_id endi
+        haqiqatan ishlatiladi (avval bu qiymat har doim e'tiborsiz
+        qoldirilib, mantiqsiz Form parametriga aylangan edi)."""
     user = get_current_user_optional(request.cookies.get("cf_session"), db)
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    if user.role not in CREATE_ROLES:
+    if user.role not in EDIT_ROLES:
         raise HTTPException(status_code=403, detail="Bu amal uchun ruxsatingiz yo'q")
 
     result = db.query(models.LabResult).filter(models.LabResult.id == result_id).first()
     if not result:
         return _redirect_with_error("Tahlil natijasi topilmadi.")
 
-    # ⬅️ Prompt 5: doctor va lab_doctor faqat O'ZIGA biriktirilgan
-    # natijani tahrirlaydi va shifokorni boshqasiga o'zgartira olmaydi.
-    if result.doctor_id != user.doctor_id:
-        raise HTTPException(status_code=403, detail="Bu tahlil natijasi sizga biriktirilmagan")
-    doctor_id = user.doctor_id
+    if user.role == "admin":
+        # Admin — Form orqali kelgan doctor_id haqiqiy, FAOL shifokorga
+        # tegishli bo'lishi kerak (yoki "mas'ul shifokorsiz" holat
+        # uchun bo'sh/0 qoldirilishi mumkin).
+        if doctor_id and doctor_id != 0:
+            target_doctor = (
+                db.query(models.Doctor)
+                .filter(models.Doctor.id == doctor_id, models.Doctor.is_active.is_(True))
+                .first()
+            )
+            if not target_doctor:
+                return _redirect_with_error(
+                    "Ko'rsatilgan shifokor topilmadi yoki faol emas."
+                )
+        else:
+            doctor_id = None
+    else:
+        # ⬅️ Prompt 5: doctor va lab_doctor faqat O'ZIGA biriktirilgan
+        # natijani tahrirlaydi va shifokorni boshqasiga o'zgartira olmaydi.
+        if result.doctor_id != user.doctor_id:
+            raise HTTPException(status_code=403, detail="Bu tahlil natijasi sizga biriktirilmagan")
+        doctor_id = user.doctor_id
 
     parsed = _parse_result_data(result.result_data)
     if not parsed:

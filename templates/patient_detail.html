@@ -92,7 +92,10 @@
 .timeline-meta { font-size: 12px; color: var(--text-muted); margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
 {% endblock %}
 
+{% from "_breadcrumb.html" import breadcrumb %}
+
 {% block content %}
+{{ breadcrumb([("Bosh sahifa", "/dashboard"), ("Bemorlar", "/patients"), (patient.fullname, none)]) }}
 <a href="/patients" class="back-link"><i class="fa-solid fa-arrow-left"></i> Bemorlar ro'yxatiga qaytish</a>
 
 <div class="header-container">
@@ -536,14 +539,58 @@
 
 {% block scripts %}
     // ── Bemor profili tab'lari ──
-    function showPatientTab(name) {
-        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-        document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
+    // Prompt 23, 1-band: URL hash bilan ikki tomonlama sinxronizatsiya.
+    //   • Sahifa (qayta) yuklanganda hash'ga (#tab=tibbiy kabi) mos tab
+    //     avtomatik ochiladi — masalan boshqa sahifadan "Tibbiy tarix"ga
+    //     to'g'ridan-to'g'ri havola berish yoki sahifani yangilash mumkin
+    //     bo'ladi.
+    //   • Tab tugmasi bosilganda URL hash ham yangilanadi (replaceState —
+    //     tab almashtirish "Orqaga" tugmasida alohida qadam sifatida
+    //     qo'shilmaydi, faqat joriy URL ko'rinishi to'g'rilanadi).
+    //   • Rolga bog'liq (Jinja2 shart-belgilar) sabab ba'zi tablar DOM'da umuman
+    //     yo'q bo'lishi mumkin (masalan cashier uchun 'tibbiy') — bunday
+    //     hash bilan kirilsa, sahifa "bo'sh" holatda qolib ketmasligi
+    //     uchun standart 'umumiy'ga qaytariladi.
+    var PATIENT_TABS = ['umumiy', 'tibbiy', 'davolanish', 'tashrif', 'tahlil', 'tolov'];
+
+    function showPatientTab(name, opts) {
+        opts = opts || {};
         const btn = document.getElementById('tab-btn-' + name);
         const pane = document.getElementById('tab-' + name);
-        if (btn) btn.classList.add('active');
-        if (pane) pane.classList.add('active');
+
+        if (!btn || !pane) {
+            // Joriy foydalanuvchi roli uchun bu tab ko'rsatilmaydi (yoki
+            // noto'g'ri/eskirgan hash) — standart tabga qaytamiz.
+            if (name !== 'umumiy') showPatientTab('umumiy', opts);
+            return;
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        pane.classList.add('active');
+
+        if (!opts.skipHashUpdate) {
+            const newHash = '#tab=' + name;
+            if (window.location.hash !== newHash) {
+                history.replaceState(null, '', newHash);
+            }
+        }
     }
+
+    // Joriy URL hash'ini o'qib, unga mos tabni ochadi. Hash bo'lmasa yoki
+    // noma'lum bo'lsa — 'umumiy' (standart).
+    function applyPatientTabFromHash() {
+        const match = /^#tab=([a-zA-Z0-9_]+)$/.exec(window.location.hash);
+        let name = match ? match[1] : 'umumiy';
+        if (PATIENT_TABS.indexOf(name) === -1) name = 'umumiy';
+        showPatientTab(name, { skipHashUpdate: true });
+    }
+
+    document.addEventListener('DOMContentLoaded', applyPatientTabFromHash);
+    // Foydalanuvchi "Orqaga/Oldinga" tugmalari bilan hash o'zgartirsa
+    // (yoki boshqa joydan #tab=... havolasi bosilsa) ham tab yangilansin.
+    window.addEventListener('hashchange', applyPatientTabFromHash);
 
     // ── Bemor rasmini yuklash ──
     async function uploadPatientPhoto(event) {

@@ -1,5 +1,6 @@
 <!-- templates/patients.html -->
 {% extends "base.html" %}
+{% from "_pagination.html" import sort_th, pagination_nav %}
 
 {% block title %}Bemorlar{% endblock %}
 
@@ -57,10 +58,14 @@
 {% endif %}
 
 <div class="data-section">
-    <table class="content-table">
+    <table class="content-table" id="patientsTable" data-sort-by="{{ sort_by }}" data-sort-order="{{ sort_order }}">
         <thead>
             <tr>
-                <th>ID</th><th>F.I.O</th><th>Telefon</th><th>Jinsi</th><th>Yosh</th><th>Ro'yxatdan o'tgan</th>
+                {{ sort_th(request, 'ID', 'id', sort_by, sort_order) }}
+                {{ sort_th(request, 'F.I.O', 'fullname', sort_by, sort_order) }}
+                <th>Telefon</th><th>Jinsi</th>
+                {{ sort_th(request, 'Yosh', 'birth_date', sort_by, sort_order) }}
+                {{ sort_th(request, "Ro'yxatdan o'tgan", 'created_at', sort_by, sort_order) }}
                 {% if current_user.role in ['admin', 'reception'] %}<th>Amallar</th>{% endif %}
             </tr>
         </thead>
@@ -101,5 +106,6 @@
             {% endfor %}
         </tbody>
     </table>
+    <div id="patientsPaginationNav">{{ pagination_nav(request, page, total_pages, total) }}</div>
 </div>
 {% endblock %}

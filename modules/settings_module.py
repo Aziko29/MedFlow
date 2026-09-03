@@ -30,7 +30,7 @@ ishlatiladi — get-or-create yordamchi funksiyalar orqali.
 import hmac
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -199,7 +199,7 @@ def update_clinic_settings(
     settings.phone = payload.phone
     settings.working_hours = payload.working_hours
     settings.queue_interval_minutes = payload.queue_interval_minutes
-    settings.updated_at = datetime.utcnow()
+    settings.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(settings)
 
@@ -221,17 +221,17 @@ def update_system_settings(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ) -> models.SystemSettings:
-    """DIQQAT: session_timeout_minutes/max_login_attempts hozircha FAQAT
-    saqlanadi/ko'rsatiladi — auth.py'dagi haqiqiy sessiya muddati/login
-    urinish cheklovi bular bilan hali ulanmagan (qarang: models.SystemSettings
-    docstring). Bu keyingi bosqichda auth.py'ni DB'dan o'qishga
-    o'tkazishni talab qiladi."""
+    """Prompt 18: session_timeout_minutes endi auth.py bilan haqiqatan
+    ulangan (qarang models.SystemSettings docstring) — bu yerda
+    saqlangan qiymat keyingi so'rovlardan boshlab amal qiladi.
+    max_login_attempts hamon FAQAT saqlanadi/ko'rsatiladi — login
+    urinish cheklovi bilan hali ulanmagan (alohida keyingi bosqich)."""
     settings = _get_system_settings(db)
     settings.timezone = payload.timezone
     settings.date_format = payload.date_format
     settings.session_timeout_minutes = payload.session_timeout_minutes
     settings.max_login_attempts = payload.max_login_attempts
-    settings.updated_at = datetime.utcnow()
+    settings.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(settings)
 

@@ -1,0 +1,205 @@
+/* static/css/responsive.css */
+/* ══════════════════════════════════════════════════════════════════
+   Prompt 20 — Mobil UI/UX
+   ══════════════════════════════════════════════════════════════════
+   1) 768px breakpoint'da responsive sidebar: mobilda sidebar yashirin
+      (ekrandan chapga siljitilgan), hamburger tugmasi (#mobileMenuBtn,
+      base.html) bosilganda html[data-mobile-sidebar="open"] atributi
+      o'rnatiladi (static/js/main.js: MobileSidebarController) va
+      sidebar slide-in animatsiyasi bilan ochiladi.
+   2) Barcha jadval konteynerlariga (.data-section — content-table
+      har doim shu konteyner ichida joylashadi, qarang: patients.html,
+      appointments.html va h.k.) overflow-x: auto — tor ekranda
+      ustunlar siqilib bir-birining ustiga tushib qolmasdan, gorizontal
+      skroll bilan o'qilishi mumkin.
+   3) Bu qoidalar ataylab ALOHIDA faylga ajratilgan (base.html'dagi
+      asosiy <style> blokidan) — desktop layout mantig'idan mustaqil,
+      kelajakda breakpoint qo'shish/o'zgartirish shu bitta faylda
+      qilinadi.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ──────────────────────────────────────────────────────────────────
+   2) Jadval konteynerlari — HAR DOIM (nafaqat mobilda) gorizontal
+   skroll imkoniyatiga ega: ekran kengligidan qat'i nazar, agar jadval
+   torroq konteynerga sig'masa (masalan planshet, yig'ilgan sidebar
+   bo'lmagan tor oyna), foydalanuvchi hech narsa buzilmasdan yon tomonga
+   skroll qila oladi. min-width jadval ustunlarining "ezilib" bir-biriga
+   yopishib qolishining oldini oladi.
+   ────────────────────────────────────────────────────────────────── */
+.data-section {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.content-table {
+    min-width: 640px;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   1) Mobil hamburger tugmasi — desktopda yashirin, faqat <=768px'da
+   ko'rinadi (pastdagi media query'da display:flex qilinadi).
+   ────────────────────────────────────────────────────────────────── */
+.mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 1001;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px var(--shadow-color);
+}
+.mobile-menu-btn:hover { color: var(--accent-color); border-color: var(--accent-color); }
+
+/* Orqa fon qoraytirish — mobil sidebar ochiq bo'lganda uning
+   tashqarisiga bosib yopish uchun. Desktopda hech qachon ko'rinmaydi
+   (html[data-mobile-sidebar="open"] faqat mobil JS orqali o'rnatiladi,
+   va pastdagi media query tashqarisida .sidebar-overlay umuman
+   render qilinmaydi). */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 999;
+}
+
+@media (max-width: 768px) {
+    /* 📁 Sidebar: standart holatda ekrandan CHAPGA siljigan (yashirin),
+       hamburger bosilganda transform: translateX(0) bilan slide-in
+       bo'lib kiradi. position:fixed — asosiy kontentni "itarib"
+       yubormasdan, uning USTIDA suzib turadi. */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        width: 260px;
+        z-index: 1000;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        padding: 24px 16px;
+    }
+
+    html[data-mobile-sidebar="open"] .sidebar {
+        transform: translateX(0);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    }
+    html[data-mobile-sidebar="open"] .sidebar-overlay {
+        display: block;
+    }
+
+    /* Mobilda "yig'ish/yoyish" (collapsed, desktop-only funksiya)
+       ma'nosiz — sidebar mobilda har doim TO'LIQ kenglikda (yoki
+       umuman ko'rinmas) bo'ladi, shuning uchun collapsed holatidagi
+       "faqat ikonka" qoidalari mobilda bekor qilinadi. */
+    html[data-sidebar="collapsed"] .sidebar {
+        width: 260px;
+        padding: 24px 16px;
+    }
+    html[data-sidebar="collapsed"] .sidebar .brand span,
+    html[data-sidebar="collapsed"] .sidebar .user-badge-info,
+    html[data-sidebar="collapsed"] .sidebar .logout-link,
+    html[data-sidebar="collapsed"] .sidebar .menu-item a span,
+    html[data-sidebar="collapsed"] .sidebar .theme-toggle span,
+    html[data-sidebar="collapsed"] .sidebar .sidebar-footer,
+    html[data-sidebar="collapsed"] .sidebar-toggle-btn span {
+        display: revert;
+    }
+    html[data-sidebar="collapsed"] .sidebar .brand { justify-content: flex-start; padding-left: 12px; gap: 12px; }
+    html[data-sidebar="collapsed"] .sidebar .user-badge { justify-content: flex-start; padding: 10px 12px; }
+    html[data-sidebar="collapsed"] .sidebar .menu-item a { justify-content: flex-start; padding: 12px 16px; gap: 14px; }
+    html[data-sidebar="collapsed"] .sidebar .theme-toggle { justify-content: flex-start; }
+
+    /* Desktopdagi "yig'ish" tugmasi mobilda keraksiz — sidebar mobilda
+       yo to'liq ochiq, yo to'liq yopiq, oraliq (collapsed) holat yo'q. */
+    .sidebar-toggle-btn { display: none; }
+
+    .mobile-menu-btn { display: flex; }
+
+    /* 🖥️ Asosiy kontent — sidebar endi position:fixed bo'lgani uchun
+       oqimdan chiqarilgan, shuning uchun main-content butun kenglikni
+       egallaydi; hamburger tugmasi kontent bilan ustma-ust tushmasligi
+       uchun yuqoridan bo'sh joy qo'shiladi. */
+    .main-content {
+        padding: 20px;
+        padding-top: 72px;
+        width: 100%;
+    }
+
+    .header-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .table-search {
+        width: 100%;
+    }
+    .table-search input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .modal-content {
+        width: 92vw;
+        padding: 20px;
+    }
+
+    .profile-header {
+        flex-direction: column;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Prompt 21 — Grid kartochkalari: 1 ustunli mobil ko'rinish.
+       Loyihada bir nechta joyda BIR XIL naqsh takrorlangan:
+         display: grid; grid-template-columns: repeat(auto-fit, minmax(Npx, 1fr));
+       (N = 220/260/360 — qarang: base.html .kpi-container/.report-grid,
+       settings.html .settings-grid/.danger-actions-grid, profile.html
+       .quick-links-grid, reports.html .load-charts-grid).
+       auto-fit + minmax o'zi ham juda tor ekranda (masalan <400px)
+       tabiiy ravishda 1 ustunga "yig'iladi", LEKIN 768px bilan ~520px
+       oralig'idagi kengliklarda (masalan planshet yoki mobil
+       landscape) hali ham 2 ta TOR ustun sig'ib qolishi mumkin — bu
+       kartochka matni/raqamlarini siqib, o'qishni qiyinlashtiradi.
+       Shu sababli, xuddi sidebar bilan bir xil 768px breakpointda,
+       BARCHA grid-kartochka konteynerlari ANIQ ravishda 1 ustunga
+       majburlanadi — auto-fit hisob-kitobiga qoldirilmaydi. */
+    .kpi-container,
+    .report-grid,
+    .settings-grid,
+    .danger-actions-grid,
+    .quick-links-grid,
+    .load-charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Flex-based kartochka qatorlari — grid emas, lekin xuddi shu
+       "260px min-width, yon-yonma joylash" muammosiga ega (masalan
+       patient_detail.html/doctor_detail.html sarlavha qatori:
+       rasm + ma'lumotlar flex: 1; min-width: 260px yonma-yon).
+       Mobilda column'ga o'tkaziladi va min-width: 260px olib
+       tashlanadi (aks holda 260px'dan tor ekranda konteyner o'zi
+       gorizontal skrollga majburlab, sahifani "siljitib" yuborardi). */
+    .patient-header-row,
+    .doctor-header-row {
+        flex-direction: column;
+        align-items: stretch;
+        min-width: 0;
+    }
+    .profile-card {
+        min-width: 0;
+        flex-basis: 100%;
+    }
+}

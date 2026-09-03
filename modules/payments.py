@@ -25,13 +25,14 @@ v3.1 fixes (post-launch review):
     while owing money — silently violating the very invariant the
     state machine (modules/appointments.py) is supposed to guarantee.
 """
-from datetime import datetime
-from typing import Dict, List, Set
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Set
 import csv
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -129,11 +130,63 @@ def add_payment(
     return new_payment
 
 
-@router.get("/list", response_model=List[schemas.PaymentListItem])
-def list_payments(db: Session = Depends(get_db)) -> List[schemas.PaymentListItem]:
+# Prompt 24: sort_by allowlist.
+_PAYMENT_SORT_COLUMNS = {
+    "id": models.Payment.id,
+    "amount": models.Payment.amount,
+    "status": models.Payment.status,
+    "created_at": models.Payment.created_at,
+}
+
+
+@router.get("/list", response_model=schemas.PaymentPage)
+def list_payments(
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, description="Bemor F.I.O yoki izoh (note) bo'yicha qidirish"),
+    sort_by: str = Query("id", description="id | amount | status | created_at"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+) -> schemas.PaymentPage:
+    """To'lovlar ro'yxati — sahifalangan, saralangan va qidiruvli
+    (Prompt 24)."""
     # joinedload(patient): _to_list_item har bir to'lov uchun
     # payment.patient.fullname'ga murojaat qiladi — eager load yo'q bo'lsa
     # bu klassik N+1 (har bir to'lov = qo'shimcha so'rov).
+    query = db.query(models.Payment).options(joinedload(models.Payment.patient))
+    if search:
+        like = f"%{search}%"
+        query = query.join(models.Patient, models.Payment.patient_id == models.Patient.id).filter(
+            or_(models.Patient.fullname.ilike(like), models.Payment.note.ilike(like))
+        )
+
+    sort_column = _PAYMENT_SORT_COLUMNS.get(sort_by, models.Payment.id)
+    sort_column = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+
+    total = query.count()
+    # models.Payment.id.desc() — barqaror ikkinchi tartib mezoni (patients.py
+    # /list'dagi bilan bir xil sabab: bir xil `status`/`amount`ga ega
+    # to'lovlar sahifalar orasida "sirg'alib" ketmasligi uchun).
+    payments = (
+        query.order_by(sort_column, models.Payment.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    refunded_ids = _refunded_payment_ids(db, [p.id for p in payments])
+    return schemas.PaymentPage(
+        items=[_to_list_item(p, refunded_ids) for p in payments],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=max((total + page_size - 1) // page_size, 1),
+    )
+
+
+def list_payments_all(db: Session) -> List[schemas.PaymentListItem]:
+    """To'liq (sahifalanmagan) to'lovlar ro'yxati — server-render HTML
+    sahifalari (main.py :: payments_page) uchun. API endpoint EMAS,
+    oddiy Python funksiyasi sifatida chaqiriladi."""
     payments = (
         db.query(models.Payment)
         .options(joinedload(models.Payment.patient))
@@ -241,7 +294,7 @@ def cancel_payment(
 
     payment.status = "cancelled"
     payment.cancelled_by_id = user.id
-    payment.cancelled_at = datetime.utcnow()
+    payment.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(payment)
     log_action(
@@ -315,7 +368,7 @@ def refund_payment(
 
     payment.status = "refunded"
     payment.refunded_by_id = user.id
-    payment.refunded_at = datetime.utcnow()
+    payment.refunded_at = datetime.now(timezone.utc).replace(tzinfo=None)
     payment.refund_reason = refund_data.reason
 
     # 🩹 Bug fix: agar shu to'lov "tugadi" deb belgilangan qabulga tegishli

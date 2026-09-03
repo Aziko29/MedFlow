@@ -129,6 +129,13 @@ DANGEROUS_ACTION_TYPES = (
     "reset_sessions",
 )
 
+# ── Sozlamalar moduli (Prompt 21) — Yorug'/Qorong'u/Avto rejim ───────────
+# User.theme_preference shu ro'yxatdagi qiymatlardan birini oladi
+# (schemas.ProfileUpdate shu yerdan import qiladi). "auto" — qurilma/
+# brauzer tizim sozlamasiga (prefers-color-scheme) mos ravishda avtomatik
+# tanlanadi (qarang: templates/base.html ThemeController).
+THEME_MODES = ("light", "dark", "auto")
+
 
 class User(Base):
     """🔐 Tizim foydalanuvchilari — rol asosida ruxsatlar (reception,
@@ -156,6 +163,19 @@ class User(Base):
     # bo'lib qoladi, umrbod cheklov emas.
     self_password_change_count = Column(Integer, nullable=False, default=0)
 
+    # 🔐 Prompt 19 — vaqtinchalik hisob bloklash (brute-force himoyasi).
+    # failed_login_attempts: ketma-ket noto'g'ri parol bilan login
+    # urinishlar soni (muvaffaqiyatli login yoki bloklanish yuz berganda
+    # 0'ga qaytariladi — qarang: auth.py register_failed_login() /
+    # register_successful_login()).
+    # locked_until: agar bo'sh bo'lmasa va hali kelmagan (kelajakdagi)
+    # vaqt bo'lsa, hisob shu vaqtgacha BLOKLANGAN — bu vaqt o'tguncha
+    # login (parol to'g'ri bo'lsa ham) rad etiladi. Muddat tugagach,
+    # keyingi login urinishi (muvaffaqiyatli yoki yo'q) hisobni avtomatik
+    # "ochadi" (qarang: auth.py is_account_locked()).
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime, nullable=True)
+
     # 🆕 Sozlamalar moduli (Prompt 12) — "Profil" bo'limida xodim o'zi
     # tahrirlaydigan qo'shimcha shaxsiy ma'lumotlar. fullname (majburiy,
     # login/audit/kvitansiyalarda ishlatiladi) bilan almashtirilmaydi —
@@ -167,6 +187,19 @@ class User(Base):
     last_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
+
+    # 🌗 Sozlamalar moduli (Prompt 21) — foydalanuvchining tanlagan
+    # interfeys mavzusi ("light" / "dark" / "auto", qarang THEME_MODES).
+    # ILGARI bu tanlov FAQAT brauzerning localStorage'ida saqlanardi —
+    # foydalanuvchi boshqa qurilma/brauzerdan kirganda sozlama yo'qolib,
+    # har safar qaytadan tanlashga to'g'ri kelardi (UX muammosi). Endi
+    # PUT /settings/profile orqali shu ustunga ham yoziladi va
+    # localStorage BILAN BIRGA sinxron ishlaydi (localStorage — tezkor,
+    # "yaltillashsiz" (anti-flicker) boshlang'ich chizish uchun; bu ustun
+    # — qurilmalar orasida saqlanishi uchun). NULL = hali hech qachon
+    # tanlamagan, standart holatda "auto" sifatida talqin qilinadi
+    # (qarang: templates/base.html anti-flicker skripti).
+    theme_preference = Column(String, nullable=True)
 
     doctor = relationship("Doctor", back_populates="user_account")
 
@@ -252,6 +285,17 @@ class Patient(Base):
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    # 🗑️ Soft delete (Prompt 6): bemorni "o'chirish" endi jismonan qatorni
+    # o'chirmaydi — is_deleted=True qilib belgilaydi. Bu qabullar/to'lovlar/
+    # tahlil natijalari kabi bog'liq moliyaviy-tibbiy tarixni tasodifan
+    # butunlay yo'qotib qo'yishning oldini oladi (Prompt 5'dagi 409 FK
+    # tekshiruvi endi ortiqcha bo'lib qoladi — chunki hech narsa haqiqiy
+    # o'chirilmaydi). Faol (o'chirilmagan) bemorlarni ko'rsatish kerak
+    # bo'lgan joylarda `Patient.is_deleted.is_(False)` bilan filtrlanadi
+    # (masalan modules/patients.py::_get_patient_or_404).
+    is_deleted = Column(Boolean, nullable=False, default=False, index=True)
+    deleted_at = Column(DateTime, nullable=True)
+
     # 📲 Telegram reminder integratsiyasi: bemor botga /start bosib, kontaktini
     # (telefon raqamini) yuborganda phone_bidx orqali topilib shu yerga yoziladi.
     telegram_chat_id = Column(String(32), unique=True, index=True, nullable=True)
@@ -303,8 +347,21 @@ class Patient(Base):
     # orqali o'rnatib bo'lmaydi (schemas.PatientBase'da yo'q).
     is_verified = Column(Boolean, nullable=False, default=False)
 
+    # ⚠️ Prompt 6: endi "save-update, merge" — "delete"/"delete-orphan"
+    # ATAYLAB olib tashlangan. Ilgari (Prompt 5'gacha) bu yerda
+    # cascade="all, delete-orphan" bo'lgani uchun `db.delete(patient)`
+    # chaqirilsa, SQLAlchemy shu bemorning BARCHA qabullarini ham DB'dan
+    # jismonan o'chirib yuborar edi (moliyaviy/tibbiy tarix yo'qolishi
+    # xavfi). Endi bemor Soft Delete qilinadi (is_deleted=True,
+    # modules/patients.py::delete_patient) — Patient qatorining o'zi hech
+    # qachon o'chirilmaydi, shuning uchun bu cascade endi umuman ishga
+    # tushmasligi kerak; "safe" holatga keltirish shuni anglatadi: hatto
+    # kimdir kelajakda xato bilan `db.delete(patient)` chaqirsa ham,
+    # appointments'lar endi avtomatik o'chirilmaydi (FK constraint xato
+    # beradi — PRAGMA foreign_keys=ON, database.py), sokin ma'lumot
+    # yo'qotish o'rniga baland ovozda xatolik chiqadi.
     appointments = relationship(
-        "Appointment", back_populates="patient", cascade="all, delete-orphan"
+        "Appointment", back_populates="patient", cascade="save-update, merge"
     )
     payments = relationship(
         "Payment", back_populates="patient", cascade="all, delete-orphan"
@@ -323,6 +380,17 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
         order_by="TreatmentHistory.date.desc()",
+    )
+    # ⬅️ YANGI (Prompt 9): to'liq yotqizilishlar tarixi — room_number/
+    # admitted_at/discharged_at/is_admitted Column'lari (yuqorida) FAQAT
+    # joriy holatni bildiradi va qayta yotqizilganda ustiga yozib
+    # yuboriladi; shu relationship orqali HAR BIR admit/discharge voqeasi
+    # alohida PatientAdmission qatori sifatida saqlanadi va yo'qolmaydi.
+    admissions = relationship(
+        "PatientAdmission",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="PatientAdmission.admitted_at.desc()",
     )
 
 
@@ -533,6 +601,49 @@ class TreatmentHistory(Base):
     doctor = relationship("Doctor")
 
 
+class PatientAdmission(Base):
+    """🛏️ Statsionar yotqizilishlar TARIXI (Prompt 9).
+
+    Bag: Patient.room_number/admitted_at/discharged_at/is_admitted
+    (Prompt 7) — bular oddiy Column'lar bo'lib, faqat bemorning ENG
+    OXIRGI ("joriy") yotqizilish holatini bildiradi. Bemor chiqarilib
+    (discharge), keyin QAYTA yotqizilganda (admit), modules/patients.py
+    o'sha Column'lar ustiga to'g'ridan-to'g'ri yozib yuborardi —
+    natijada oldingi yotqizilishning `discharged_at`si (va qaysi
+    palatada, qachon yotgani) butunlay yo'qolib ketardi, chunki alohida
+    tarix qatori saqlanmasdi.
+
+    PatientAdmission — har bir yotqizilish/chiqarilish HODISASI uchun
+    ALOHIDA qator (to'liq, yo'qolmaydigan tarix jadvali). Patient
+    jadvalidagi joriy-holat ustunlari ATAYLAB olib tashlanmadi — ular
+    ko'p joyda (dashboard, GET /rooms, GET /admitted) "hozir kim
+    palatada" degan tezkor so'rovni indekslangan Column bo'yicha to'g'ri
+    berish uchun hamon kerak; bu jadval ularni ALMASHTIRMAYDI, balki
+    TO'LDIRADI (har bir admit/discharge voqeasi shu yerga ham yoziladi).
+
+    `room_number` — talab qilingan 4ta maydondan (id, patient_id,
+    admitted_at, discharged_at, discharged_reason) tashqari qo'shilgan,
+    chunki aks holda tarix "qaysi palatada yotgan edi" degan eng muhim
+    savolga javob bermay qoladi (LabResult/TreatmentHistory'dagi
+    ixtiyoriy-kontekst ustunlari bilan bir xil mantiq).
+    """
+
+    __tablename__ = "patient_admissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    room_number = Column(String(20), nullable=True)
+    admitted_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    # NULL = bemor hamon shu yotqizilishda (hali chiqarilmagan).
+    discharged_at = Column(DateTime, nullable=True)
+    # Chiqarish sababi — ixtiyoriy erkin matn (masalan "Sog'aydi",
+    # "Boshqa klinikaga o'tkazildi", "O'z xohishi bilan"). Tibbiy sir
+    # emas (LabResult.test_name kabi) — shifrlanmaydi.
+    discharged_reason = Column(String, nullable=True)
+
+    patient = relationship("Patient", back_populates="admissions")
+
+
 class PatientLoginOTP(Base):
     """📲 FAZA 2 — Bemor portali uchun SMS orqali bir martalik login kodi
     (OTP). Har bir kod so'rovi shu jadvalga bitta qator qo'shadi.
@@ -711,12 +822,14 @@ class SystemSettings(Base):
     modules/settings_module.py'dagi _get_system_settings()). Faqat
     admin PUT /settings/system orqali o'zgartira oladi.
 
-    MUHIM: bu yerdagi session_timeout_minutes/max_login_attempts hozircha
-    FAQAT saqlanadi va ko'rsatiladi — auth.py'dagi haqiqiy sessiya
-    muddati/login-urinish cheklovi bular bilan hali ulanmagan (bu alohida
-    keyingi bosqich, chunki auth.py konstantalari import vaqtida
-    o'qiladi, DB qatoridan emas). Shu bois PUT /settings/system javobida
-    va logda bu aniq eslatiladi.
+    session_timeout_minutes: auth.py'dagi _get_session_max_age_seconds()
+    orqali HAR BIR himoyalangan so'rovda o'qiladi (Prompt 18) — admin
+    bu qiymatni o'zgartirsa, server qayta ishga tushirilmasdan, KEYINGI
+    so'rovdanoq yangi sessiya muddati amal qiladi.
+
+    max_login_attempts: hozircha FAQAT saqlanadi/ko'rsatiladi — login
+    urinishlar cheklovi bilan hali ulanmagan (bu alohida keyingi
+    bosqich).
     """
 
     __tablename__ = "system_settings"

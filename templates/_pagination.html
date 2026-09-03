@@ -1,0 +1,63 @@
+{# templates/_pagination.html — Prompt 25/1: sarlavha saralash strelkalari
+   va sahifalash navigatsiyasi uchun umumiy macro'lar (patients/appointments/
+   payments jadvallari orasida takrorlanmasin deb). To'liq sahifa GET
+   so'rovi orqali ishlaydi (?sort_by=&sort_order=&page=) — backend
+   (modules/patients.py, appointments.py, payments.py :: list_* — Prompt 24)
+   allaqachon shu parametrlarni qabul qilib, saralangan/sahifalangan natija
+   qaytaradi. `merge_qs` — main.py'da ro'yxatdan o'tkazilgan Jinja global
+   funksiya, joriy URL query-parametrlarini (masalan allergiya filtri)
+   saqlab qolib, faqat berilganlarini almashtiradi. #}
+
+{% macro sort_th(request, label, key, current_sort_by, current_sort_order) %}
+{% set is_active = current_sort_by == key %}
+{% set next_order = 'asc' if (is_active and current_sort_order == 'desc') else 'desc' %}
+<th>
+    <a class="sort-th-link" href="?{{ merge_qs(request, sort_by=key, sort_order=next_order, page=1) }}">
+        {{ label }}
+        {% if is_active %}
+        <i class="fa-solid fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }} sort-th-icon active"></i>
+        {% else %}
+        <i class="fa-solid fa-sort sort-th-icon"></i>
+        {% endif %}
+    </a>
+</th>
+{% endmacro %}
+
+{% macro pagination_nav(request, page, total_pages, total) %}
+{% if total_pages > 1 %}
+<div class="pagination-nav">
+    <div class="pagination-info">Jami: {{ total }} ta — {{ page }}/{{ total_pages }}-sahifa</div>
+    <div class="pagination-controls">
+        {% if page > 1 %}
+        <a class="btn-icon-sm" href="?{{ merge_qs(request, page=page - 1) }}" title="Oldingi sahifa"><i class="fa-solid fa-chevron-left"></i></a>
+        {% else %}
+        <span class="btn-icon-sm disabled"><i class="fa-solid fa-chevron-left"></i></span>
+        {% endif %}
+
+        {% set start_p = [1, page - 2] | max %}
+        {% set end_p = [total_pages, page + 2] | min %}
+        {% if start_p > 1 %}
+        <a class="pagination-page" href="?{{ merge_qs(request, page=1) }}">1</a>
+        {% if start_p > 2 %}<span class="pagination-page">…</span>{% endif %}
+        {% endif %}
+        {% for p in range(start_p, end_p + 1) %}
+            {% if p == page %}
+            <span class="pagination-page current">{{ p }}</span>
+            {% else %}
+            <a class="pagination-page" href="?{{ merge_qs(request, page=p) }}">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+        {% if end_p < total_pages %}
+        {% if end_p < total_pages - 1 %}<span class="pagination-page">…</span>{% endif %}
+        <a class="pagination-page" href="?{{ merge_qs(request, page=total_pages) }}">{{ total_pages }}</a>
+        {% endif %}
+
+        {% if page < total_pages %}
+        <a class="btn-icon-sm" href="?{{ merge_qs(request, page=page + 1) }}" title="Keyingi sahifa"><i class="fa-solid fa-chevron-right"></i></a>
+        {% else %}
+        <span class="btn-icon-sm disabled"><i class="fa-solid fa-chevron-right"></i></span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endmacro %}
