@@ -1,0 +1,153 @@
+<!-- templates/portal/login.html -->
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bemor kabineti · MedFlow</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-void: #05070d; --primary: #00e5ff; --primary-hover: #33ecff;
+            --accent-violet: #a855f7; --text-dark: #e6f1ff; --text-muted: #7c8aa8;
+            --border-color: rgba(0, 229, 255, 0.15); --danger: #ff3d6e; --accent-green: #39ff9d;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body {
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(168, 85, 247, 0.18), transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(0, 229, 255, 0.14), transparent 45%),
+                var(--bg-void);
+        }
+        .card {
+            background: rgba(15, 23, 36, 0.65); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(0,229,255,0.18); padding: 32px 28px; width: 100%; max-width: 380px;
+            border-radius: 10px; box-shadow: 0 0 50px rgba(0,229,255,0.10), 0 25px 50px rgba(0,0,0,0.5);
+        }
+        .brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; margin-bottom: 6px; color: var(--text-dark); font-family: 'Space Grotesk', sans-serif; }
+        .brand i { color: var(--primary); }
+        .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+        .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .form-group label { font-size: 13px; font-weight: 500; color: var(--text-dark); }
+        .form-group input {
+            padding: 13px 14px; border: 1px solid rgba(0,229,255,0.18); border-radius: 8px; font-size: 16px;
+            font-family: inherit; background: rgba(255,255,255,0.03); color: var(--text-dark); width: 100%;
+            letter-spacing: 0.02em;
+        }
+        .form-group input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 12px rgba(0,229,255,0.3); }
+        .form-group input#code { text-align: center; letter-spacing: 0.4em; font-size: 22px; font-weight: 700; }
+        .msg { display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+        .msg-error { background: rgba(255,61,110,0.12); color: #ff6b8f; border: 1px solid rgba(255,61,110,0.3); }
+        .msg-ok { background: rgba(57,255,157,0.10); color: var(--accent-green); border: 1px solid rgba(57,255,157,0.25); }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: 700; cursor: pointer;
+               font-size: 15px; background: var(--primary); color: #04121a; transition: all 0.2s; }
+        .btn:hover { background: var(--primary-hover); }
+        .btn:disabled { background: #4a5670; cursor: not-allowed; }
+        .btn-link { background: none; border: none; color: var(--text-muted); font-size: 13px; margin-top: 14px;
+                    cursor: pointer; text-decoration: underline; width: 100%; }
+        .step { display: none; }
+        .step.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand"><i class="fa-solid fa-heart-pulse"></i> MedFlow</div>
+        <div class="subtitle">Bemor kabineti — o'z navbatlaringiz, tahlil natijalaringiz va to'lovlar tarixini ko'rish uchun telefon raqamingiz bilan kiring.</div>
+
+        <div id="msgBox" class="msg"></div>
+
+        <div id="stepPhone" class="step active">
+            <form onsubmit="requestCode(event)" autocomplete="off">
+                <div class="form-group">
+                    <label for="phone">Telefon raqami:</label>
+                    <input type="tel" id="phone" placeholder="+998901234567" required autofocus inputmode="tel" autocomplete="off">
+                </div>
+                <button type="submit" class="btn" id="phoneBtn">Kod yuborish</button>
+            </form>
+        </div>
+
+        <div id="stepCode" class="step">
+            <div class="form-group">
+                <label for="code">SMS orqali kelgan kod:</label>
+                <input type="text" id="code" maxlength="6" inputmode="numeric" placeholder="000000" autofocus autocomplete="off">
+            </div>
+            <button type="submit" class="btn" id="codeBtn" onclick="verifyCode(event)">Tasdiqlash</button>
+            <button type="button" class="btn-link" onclick="backToPhone()">Boshqa raqam kiritish</button>
+        </div>
+    </div>
+
+    <script>
+        let submittedPhone = "";
+
+        function showMsg(text, isError) {
+            const box = document.getElementById('msgBox');
+            box.textContent = text;
+            box.className = 'msg ' + (isError ? 'msg-error' : 'msg-ok');
+            box.style.display = 'block';
+        }
+
+        function hideMsg() {
+            document.getElementById('msgBox').style.display = 'none';
+        }
+
+        function backToPhone() {
+            hideMsg();
+            document.getElementById('stepCode').classList.remove('active');
+            document.getElementById('stepPhone').classList.add('active');
+        }
+
+        async function requestCode(event) {
+            event.preventDefault();
+            hideMsg();
+            const btn = document.getElementById('phoneBtn');
+            const phone = document.getElementById('phone').value.trim();
+            btn.disabled = true; btn.textContent = 'Yuborilmoqda...';
+            try {
+                const resp = await fetch('/portal/login/request-code', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                });
+                const body = await resp.json().catch(() => null);
+                submittedPhone = phone;
+                showMsg((body && body.message) || "Agar bunday raqam ro'yxatda mavjud bo'lsa, kod yuborildi.", false);
+                document.getElementById('stepPhone').classList.remove('active');
+                document.getElementById('stepCode').classList.add('active');
+            } catch (err) {
+                showMsg("Xatolik yuz berdi. Qaytadan urinib ko'ring.", true);
+            } finally {
+                btn.disabled = false; btn.textContent = 'Kod yuborish';
+            }
+        }
+
+        async function verifyCode(event) {
+            event.preventDefault();
+            hideMsg();
+            const btn = document.getElementById('codeBtn');
+            const code = document.getElementById('code').value.trim();
+            btn.disabled = true; btn.textContent = 'Tekshirilmoqda...';
+            try {
+                const resp = await fetch('/portal/login/verify', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: submittedPhone, code })
+                });
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => null);
+                    throw new Error((body && body.detail) || 'Kod noto\'g\'ri yoki muddati tugagan.');
+                }
+                window.location.href = '/portal/dashboard';
+            } catch (err) {
+                showMsg(err.message, true);
+            } finally {
+                btn.disabled = false; btn.textContent = 'Tasdiqlash';
+            }
+        }
+    </script>
+</body>
+</html>

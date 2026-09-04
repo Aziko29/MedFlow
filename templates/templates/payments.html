@@ -1,0 +1,71 @@
+<!-- templates/payments.html -->
+{% extends "base.html" %}
+{% from "_pagination.html" import sort_th, pagination_nav %}
+
+{% block title %}To'lovlar{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>To'lovlar</h1></div>
+    <div class="header-actions">
+        <div class="table-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Bemor bo'yicha qidirish..." oninput="filterTable(this, 'paymentsTableBody')">
+        </div>
+        {% if current_user.role in ['admin', 'cashier'] %}
+        <a href="/api/payments/export/csv" class="btn-secondary-action">
+            <i class="fa-solid fa-file-csv"></i> CSV yuklab olish
+        </a>
+        {% endif %}
+        {% if current_user.role in ['admin', 'reception', 'cashier'] %}
+        <button class="btn-primary-action" onclick="openPaymentModal()">
+            <i class="fa-solid fa-plus"></i> Yangi To'lov
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="data-section">
+    <table class="content-table" id="paymentsTable" data-sort-by="{{ sort_by }}" data-sort-order="{{ sort_order }}">
+        <thead>
+            <tr>
+                {{ sort_th(request, 'ID', 'id', sort_by, sort_order) }}
+                <th>Bemor</th><th>Qabul</th>
+                {{ sort_th(request, 'Miqdor (UZS)', 'amount', sort_by, sort_order) }}
+                <th>Turi</th><th>Izoh</th>
+                {{ sort_th(request, 'Sana', 'created_at', sort_by, sort_order) }}
+                {% if current_user.role in ['admin', 'cashier'] %}<th>Amallar</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody id="paymentsTableBody">
+            {% for pay in payments %}
+            <tr>
+                <td>#{{ pay.id }}</td>
+                <td><a class="link-name" href="/patients/{{ pay.patient_id }}">{{ pay.patient_name }}</a></td>
+                <td>#{{ pay.appointment_id }}</td>
+                <td>{{ "{:,}".format(pay.amount) }}</td>
+                <td>
+                    {% if pay.is_refund %}<span class="status-badge status-cancelled">Qaytarim</span>
+                    {% elif pay.is_refunded %}<span class="status-badge status-cancelled">To'lov (qaytarilgan)</span>
+                    {% else %}<span class="status-badge status-completed">To'lov</span>{% endif %}
+                </td>
+                <td>{{ pay.note or '—' }}</td>
+                <td>{{ pay.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                {% if current_user.role in ['admin', 'cashier'] %}
+                <td class="row-actions">
+                    {% if not pay.is_refund and not pay.is_refunded %}
+                    <button class="btn-icon-sm danger" title="Qaytarish" onclick="refundPayment({{ pay.id }})">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="8">Hozircha to'lovlar yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div id="paymentsPaginationNav">{{ pagination_nav(request, page, total_pages, total) }}</div>
+</div>
+{% endblock %}

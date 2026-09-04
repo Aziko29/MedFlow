@@ -1,0 +1,43 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+jinja2>=3.1
+python-multipart>=0.0.9
+alembic>=1.13              # DB migratsiyalari — schema o'zgarishlari endi
+                             # `models.Base.metadata.create_all()` emas, balki
+                             # versiyalangan, qaytariladigan migratsiyalar
+                             # orqali qo'llanadi (bat.: `alembic upgrade head`).
+
+# 🔐 Xavfsizlik (2-band)
+argon2-cffi>=23.1        # Parol xeshlash — Argon2id (OWASP tavsiyasi)
+slowapi>=0.1.9           # Rate-limiting — /login uchun brute-force himoyasi
+cryptography>=42.0       # Maydon darajasidagi shifrlash (AES-256-GCM) — crypto_fields.py
+Pillow>=10.3              # Bemor rasmini 400x400 thumbnaylga kichraytirish — modules/patients.py
+
+# 🧠 Ixtiyoriy — faqat CLINICFLOW_REDIS_URL sozlansa kerak bo'ladi (4-band):
+# ko'p-worker (gunicorn --workers N > 1) rejimida user-cache (auth.py) va
+# rate limiter (rate_limiter.py) uchun markazlashgan Redis backend.
+# Bitta workerli development uchun o'rnatish shart emas.
+# redis>=5.0
+
+# ⚙️ Production konfiguratsiyasi (5-band)
+python-dotenv>=1.0       # .env faylidan environment o'zgaruvchilarini o'qish
+gunicorn>=22.0            # Production WSGI/ASGI process manager (Linux/macOS;
+                           # Windows'da development uchun `python main.py`
+                           # yetarli, gunicorn Windows'ni qo'llab-quvvatlamaydi)
+
+# 📲 Telegram eslatma tizimi (reminder_service.py)
+apscheduler>=3.10        # Background job scheduler — har 15 daqiqada navbatlarni tekshiradi
+httpx>=0.27               # Telegram Bot API (sendMessage/getUpdates) uchun HTTP client
+
+# 🐘 Ixtiyoriy — agar DATABASE_URL PostgreSQL'ga o'rnatilsa kerak bo'ladi.
+# SQLite bilan ishlayotgan bo'lsangiz o'rnatish shart emas.
+# psycopg2-binary>=2.9
+
+# Ixtiyoriy — faqat yuklama testi (locustfile.py) uchun kerak,
+# ishlab chiqarish (production) uchun shart emas.
+locust>=2.29
+
+# Ixtiyoriy — testlarni ishga tushirish uchun (tests/test_auth_required.py)
+pytest>=8.0
+httpx>=0.27

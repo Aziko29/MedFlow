@@ -1,0 +1,65 @@
+<!-- templates/portal/lab_results.html -->
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tahlil natijalarim · MedFlow</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    {% include "portal/_style.html" %}
+    <style>
+        .indicator-mini { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed var(--border-color); }
+        .indicator-mini:last-child { border-bottom: none; }
+        .indicator-mini .flag-past, .indicator-mini .flag-yuqori, .indicator-mini .flag-ogohlantirish { color: var(--danger); font-weight: 700; }
+        .indicator-mini .flag-normal { color: var(--accent-green); }
+        .indicators-box { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+        .raw-text { margin-top: 10px; font-size: 13px; color: var(--text-muted); white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    {% include "portal/_nav.html" %}
+
+    <main class="portal-main">
+        <h1 class="page-title">Tahlil natijalarim</h1>
+
+        {% if rows %}
+        <div class="card-list">
+            {% for row in rows %}
+            <div class="item-card">
+                <div class="item-row">
+                    <div class="item-main">
+                        <div class="item-title">{{ row.obj.test_name }}</div>
+                        <div class="item-sub">{{ row.obj.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+                    </div>
+                    {% if row.parsed and row.parsed.abnormal_count %}
+                    <span class="result-badge warn">{{ row.parsed.abnormal_count }} chetga chiqqan</span>
+                    {% else %}
+                    <span class="result-badge ok">Me'yorda</span>
+                    {% endif %}
+                </div>
+
+                {% if row.parsed %}
+                <div class="indicators-box">
+                    {% for ind in row.parsed.indicators %}
+                    <div class="indicator-mini">
+                        <span>{{ ind.name }}</span>
+                        <span class="flag-{{ ind.flag }}">{{ ind.value }}{% if ind.unit %} {{ ind.unit }}{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% elif row.raw_text %}
+                <div class="raw-text">{{ row.raw_text }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fa-solid fa-vial-circle-check"></i>
+            <p>Hozircha tahlil natijalaringiz mavjud emas.</p>
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

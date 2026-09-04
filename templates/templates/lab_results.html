@@ -1,0 +1,389 @@
+<!-- templates/lab_results.html -->
+{% extends "base.html" %}
+
+{% block title %}Tahlil natijalari{% endblock %}
+
+{% block extra_style %}
+.template-select-group { margin-bottom: 14px; }
+.indicator-row {
+    display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px;
+    align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);
+}
+.indicator-row:last-child { border-bottom: none; }
+.indicator-name { font-size: 13px; font-weight: 500; }
+.indicator-ref { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
+.indicator-input input, .indicator-input select {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;
+}
+.indicator-flag { font-size: 11px; font-weight: 700; text-align: right; padding-right: 4px; }
+.flag-normal { color: var(--accent-green); }
+.flag-past { color: var(--primary); }
+.flag-yuqori { color: var(--danger); }
+.flag-ogohlantirish { color: var(--danger); }
+.flag-neutral { color: var(--text-muted); }
+.result-badge { padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+.result-badge.ok { background-color: rgba(57,255,157,0.15); color: var(--accent-green); }
+.result-badge.warn { background-color: rgba(255,61,110,0.15); color: var(--danger); }
+.result-badge.legacy { background-color: rgba(124,138,168,0.15); color: var(--text-muted); }
+.form-error i { margin-right: 6px; }
+.view-indicator-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.view-indicator-table th, .view-indicator-table td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--border-color); text-align: left; }
+.view-indicator-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+.modal-content.wide { width: 620px; }
+{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Tahlil natijalari</h1></div>
+    <div class="header-actions">
+        <div class="table-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Bemor, shifokor yoki tahlil turi bo'yicha qidirish..." oninput="filterTable(this, 'labResultsTableBody')">
+        </div>
+        {% if current_user.role in ['admin', 'doctor', 'reception'] %}
+        <button class="btn-primary-action" onclick="openLabResultModal()">
+            <i class="fa-solid fa-plus"></i> Yangi tahlil
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% set form_error = request.query_params.get('form_error') %}
+{% if form_error %}
+<div class="form-error" style="display:block;"><i class="fa-solid fa-triangle-exclamation"></i> {{ form_error }}</div>
+{% endif %}
+
+<div class="data-section">
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Bemor</th><th>Shifokor</th><th>Tahlil turi</th><th>Natija</th><th>Holat</th><th>Sana</th><th>Amallar</th>
+            </tr>
+        </thead>
+        <tbody id="labResultsTableBody">
+            {% for row in rows %}
+            {% set r = row.obj %}
+            <tr>
+                <td>#{{ r.id }}</td>
+                <td><a class="link-name" href="/patients/{{ r.patient_id }}">{{ r.patient.fullname if r.patient else '—' }}</a></td>
+                <td>{{ r.doctor.fullname if r.doctor else '—' }}</td>
+                <td>{{ r.test_name }}</td>
+                <td>
+                    {% if row.parsed %}
+                        {% if row.abnormal_count and row.abnormal_count > 0 %}
+                        <span class="result-badge warn">{{ row.abnormal_count }} ta ogohlantirish</span>
+                        {% else %}
+                        <span class="result-badge ok">Me'yorda</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="result-badge legacy" title="{{ row.raw_text }}">Eski yozuv</span>
+                    {% endif %}
+                </td>
+                <td><span class="status-badge">{{ r.status }}</span></td>
+                <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="row-actions">
+                    {% if row.parsed %}
+                    <button class="btn-icon-sm" title="Batafsil" onclick='openLabViewModal({{ row.parsed|tojson }}, {{ r.test_name|tojson }}, {{ (r.patient.fullname if r.patient else "—")|tojson }})'>
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                    {% if current_user.role in ['admin', 'doctor', 'reception'] %}
+                    <button class="btn-icon-sm" title="Tahrirlash" onclick='openLabEditModal({{ r.id }}, {{ row.parsed|tojson }}, {{ r.doctor_id or 0 }}, {{ r.status|tojson }})'>
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    {% endif %}
+                    {% endif %}
+                    {% if current_user.role == 'admin' %}
+                    <form method="post" action="/lab-results/delete/{{ r.id }}" style="display:inline" onsubmit="return confirm('Ushbu tahlil natijasini o\'chirishni tasdiqlaysizmi?')">
+                        <button type="submit" class="btn-icon-sm danger" title="O'chirish">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="8">Hozircha tahlil natijalari yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if current_user.role in ['admin', 'doctor', 'reception'] %}
+<!-- ═══════════════ MODAL: Yangi tahlil natijasi ═══════════════ -->
+<div id="labResultModal" class="modal">
+    <div class="modal-content wide">
+        <span class="close-btn" onclick="closeModal('labResultModal')">&times;</span>
+        <h2><i class="fa-solid fa-vial"></i> Yangi tahlil natijasi</h2>
+        <div id="labResultFormError" class="form-error"></div>
+        <form method="post" action="/lab-results/add" id="labResultForm" onsubmit="return prepareLabSubmit(event, false)">
+            <div class="form-group">
+                <label for="lr-patient-input">Bemor:</label>
+                <input type="text" class="select-search-input" id="lr-patient-filter" placeholder="F.I.O yoki telefon bo'yicha qidirish..." oninput="filterSelectOptions(this, 'lr-patient')" autocomplete="off">
+                <select id="lr-patient" name="patient_id" required>
+                    <option value="" disabled selected>Bemorni tanlang</option>
+                    {% for p in patients %}
+                    <option value="{{ p.id }}">{{ p.fullname }} — {{ p.phone }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="lr-doctor">Shifokor (ixtiyoriy):</label>
+                <input type="text" class="select-search-input" id="lr-doctor-filter" placeholder="F.I.O bo'yicha qidirish..." oninput="filterSelectOptions(this, 'lr-doctor')" autocomplete="off">
+                <select id="lr-doctor" name="doctor_id">
+                    <option value="0">—</option>
+                    {% for d in doctors %}
+                    <option value="{{ d.id }}">{{ d.fullname }} ({{ d.specialty }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="lr-template">Tahlil turi:</label>
+                <select id="lr-template" required onchange="renderLabForm('lr-indicators', this.value, null)">
+                    <option value="" disabled selected>Tahlil turini tanlang</option>
+                    {% set ns = namespace(cat='') %}
+                    {% for t in lab_templates_list|sort(attribute='category') %}
+                        {% if t.category != ns.cat %}
+                            {% if ns.cat != '' %}</optgroup>{% endif %}
+                            <optgroup label="{{ t.category }}">
+                            {% set ns.cat = t.category %}
+                        {% endif %}
+                        <option value="{{ t.key }}">{{ t.name }}</option>
+                    {% endfor %}
+                    </optgroup>
+                </select>
+                <span class="form-hint">Tanlagach barcha ko'rsatkichlar standart (me'yoriy) qiymat bilan to'ldiriladi — faqat o'zgargan ko'rsatkichni tahrirlang.</span>
+            </div>
+            <div class="form-group" id="lr-indicators-wrap" style="display:none;">
+                <label>Ko'rsatkichlar:</label>
+                <div id="lr-indicators"></div>
+            </div>
+            <div class="form-group">
+                <label for="lr-note">Izoh (ixtiyoriy):</label>
+                <textarea id="lr-note" rows="2" placeholder="Qo'shimcha izoh, xulosa..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="lr-status">Holat:</label>
+                <select id="lr-status" name="status_val">
+                    <option value="Tayyor">Tayyor</option>
+                    <option value="Kutilmoqda">Kutilmoqda</option>
+                </select>
+            </div>
+            <input type="hidden" name="template_key" id="lr-template-hidden">
+            <input type="hidden" name="indicators_json" id="lr-indicators-json">
+            <input type="hidden" name="note" id="lr-note-hidden">
+            <button type="submit" class="btn-save">Saqlash</button>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════════════ MODAL: Tahlilni tahrirlash ═══════════════ -->
+<div id="labEditModal" class="modal">
+    <div class="modal-content wide">
+        <span class="close-btn" onclick="closeModal('labEditModal')">&times;</span>
+        <h2><i class="fa-solid fa-pen"></i> Tahlilni tahrirlash</h2>
+        <div id="labEditFormError" class="form-error"></div>
+        <form method="post" id="labEditForm" onsubmit="return prepareLabSubmit(event, true)">
+            <div class="form-group">
+                <label for="le-doctor">Shifokor (ixtiyoriy):</label>
+                <input type="text" class="select-search-input" id="le-doctor-filter" placeholder="F.I.O bo'yicha qidirish..." oninput="filterSelectOptions(this, 'le-doctor')" autocomplete="off">
+                <select id="le-doctor" name="doctor_id">
+                    <option value="0">—</option>
+                    {% for d in doctors %}
+                    <option value="{{ d.id }}">{{ d.fullname }} ({{ d.specialty }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Ko'rsatkichlar:</label>
+                <div id="le-indicators"></div>
+            </div>
+            <div class="form-group">
+                <label for="le-note">Izoh (ixtiyoriy):</label>
+                <textarea id="le-note" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="le-status">Holat:</label>
+                <select id="le-status" name="status_val">
+                    <option value="Tayyor">Tayyor</option>
+                    <option value="Kutilmoqda">Kutilmoqda</option>
+                </select>
+            </div>
+            <input type="hidden" name="indicators_json" id="le-indicators-json">
+            <input type="hidden" name="note" id="le-note-hidden">
+            <button type="submit" class="btn-save">Saqlash</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════ MODAL: Tahlil natijasini ko'rish (batafsil) ═══════════════ -->
+<div id="labViewModal" class="modal">
+    <div class="modal-content wide">
+        <span class="close-btn" onclick="closeModal('labViewModal')">&times;</span>
+        <h2><i class="fa-solid fa-flask"></i> <span id="lv-title"></span></h2>
+        <p class="form-hint" id="lv-subtitle"></p>
+        <table class="view-indicator-table">
+            <thead><tr><th>Ko'rsatkich</th><th>Natija</th><th>Me'yor</th><th>Holat</th></tr></thead>
+            <tbody id="lv-indicators-body"></tbody>
+        </table>
+        <div id="lv-note-wrap" style="margin-top:14px; display:none;">
+            <label class="form-hint" style="font-weight:600;">Izoh:</label>
+            <p id="lv-note" style="font-size:13px; margin-top:4px;"></p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+    // Barcha 20 ta tahlil shabloni (ko'rsatkichlar, me'yoriy oraliqlar, standart qiymatlar).
+    const LAB_TEMPLATES = {{ lab_templates_map|tojson }};
+
+    const FLAG_LABELS = {
+        normal: "Me'yorda", past: "Past", yuqori: "Yuqori",
+        ogohlantirish: "Diqqat", neutral: ""
+    };
+
+    function indicatorFieldHTML(ind, presetValue) {
+        const value = (presetValue !== undefined && presetValue !== null) ? presetValue : ind.default;
+        let inputHtml;
+        if (ind.type === 'number') {
+            inputHtml = `<input type="number" step="${ind.step || 'any'}" data-key="${ind.key}" data-type="number" value="${value}" oninput="updateIndicatorFlag(this)">`;
+        } else if (ind.type === 'select' || ind.type === 'choice') {
+            const opts = ind.options.map(o => `<option value="${o}" ${o === value ? 'selected' : ''}>${o}</option>`).join('');
+            inputHtml = `<select data-key="${ind.key}" data-type="${ind.type}" onchange="updateIndicatorFlag(this)">${opts}</select>`;
+        } else {
+            inputHtml = `<input type="text" data-key="${ind.key}" data-type="text" value="${value}" oninput="updateIndicatorFlag(this)">`;
+        }
+        const flagSpan = (ind.type === 'choice' || ind.type === 'text') ? '' :
+            `<span class="indicator-flag" data-flag-for="${ind.key}"></span>`;
+        return `
+            <div class="indicator-row">
+                <div class="indicator-name">${ind.name}<span class="indicator-ref">${ind.ref_range || ''}${ind.unit ? ' ' + ind.unit : ''}</span></div>
+                <div class="indicator-input">${inputHtml}</div>
+                ${flagSpan}
+            </div>`;
+    }
+
+    function computeFlag(ind, value) {
+        if (ind.type === 'number') {
+            const val = parseFloat(String(value).replace(',', '.'));
+            if (isNaN(val)) return null;
+            if (val < ind.ref_min) return 'past';
+            if (val > ind.ref_max) return 'yuqori';
+            return 'normal';
+        }
+        if (ind.type === 'select') {
+            return ind.normal_values.includes(value) ? 'normal' : 'ogohlantirish';
+        }
+        return 'neutral';
+    }
+
+    function updateIndicatorFlag(el) {
+        const key = el.dataset.key;
+        const container = el.closest('#lr-indicators, #le-indicators') || el.closest('[id$="-indicators"]');
+        const templateKey = container ? container.dataset.templateKey : null;
+        if (!templateKey || !LAB_TEMPLATES[templateKey]) return;
+        const ind = LAB_TEMPLATES[templateKey].indicators.find(i => i.key === key);
+        if (!ind) return;
+        const flagEl = container.querySelector(`[data-flag-for="${key}"]`);
+        if (!flagEl) return;
+        const flag = computeFlag(ind, el.value);
+        flagEl.textContent = flag ? FLAG_LABELS[flag] : '';
+        flagEl.className = 'indicator-flag ' + (flag ? 'flag-' + flag : '');
+    }
+
+    // presetValues: {key: value} — tahrirlashda mavjud qiymatlarni ko'rsatish uchun
+    function renderLabForm(containerId, templateKey, presetValues) {
+        const container = document.getElementById(containerId);
+        const wrap = document.getElementById(containerId + '-wrap');
+        const tpl = LAB_TEMPLATES[templateKey];
+        if (!tpl) { container.innerHTML = ''; if (wrap) wrap.style.display = 'none'; return; }
+        container.dataset.templateKey = templateKey;
+        container.innerHTML = tpl.indicators.map(ind => {
+            const preset = presetValues ? presetValues[ind.key] : undefined;
+            return indicatorFieldHTML(ind, preset);
+        }).join('');
+        if (wrap) wrap.style.display = '';
+        // Har bir maydon uchun boshlang'ich bayroqni chizamiz
+        container.querySelectorAll('[data-key]').forEach(updateIndicatorFlag);
+    }
+
+    function collectIndicators(containerId) {
+        const container = document.getElementById(containerId);
+        const out = {};
+        container.querySelectorAll('[data-key]').forEach((el) => { out[el.dataset.key] = el.value; });
+        return out;
+    }
+
+    // ── Yangi tahlil modali ──
+    function openLabResultModal() {
+        document.getElementById('labResultForm').reset();
+        document.getElementById('lr-indicators').innerHTML = '';
+        document.getElementById('lr-indicators-wrap').style.display = 'none';
+        setFormError('labResultFormError', null);
+        openModal('labResultModal');
+    }
+
+    function prepareLabSubmit(event, isEdit) {
+        event.preventDefault();
+        const prefix = isEdit ? 'le' : 'lr';
+        const errorBox = isEdit ? 'labEditFormError' : 'labResultFormError';
+        setFormError(errorBox, null);
+
+        const containerId = prefix + '-indicators';
+        const container = document.getElementById(containerId);
+        const templateKey = container ? container.dataset.templateKey : null;
+        if (!templateKey) {
+            setFormError(errorBox, "Avval tahlil turini tanlang.");
+            return false;
+        }
+
+        const indicators = collectIndicators(containerId);
+        document.getElementById(prefix + '-indicators-json').value = JSON.stringify(indicators);
+        document.getElementById(prefix + '-note-hidden').value = document.getElementById(prefix + '-note').value.trim();
+        if (!isEdit) {
+            document.getElementById('lr-template-hidden').value = templateKey;
+        }
+        event.target.submit();
+        return false;
+    }
+
+    // ── Tahrirlash modali ──
+    function openLabEditModal(resultId, parsed, doctorId, statusVal) {
+        setFormError('labEditFormError', null);
+        document.getElementById('labEditForm').action = '/lab-results/edit/' + resultId;
+        document.getElementById('le-doctor').value = doctorId || '0';
+        document.getElementById('le-status').value = statusVal;
+        document.getElementById('le-note').value = parsed.note || '';
+        const presetValues = {};
+        (parsed.indicators || []).forEach(i => { presetValues[i.key] = i.value; });
+        renderLabForm('le-indicators', parsed.template_key, presetValues);
+        openModal('labEditModal');
+    }
+
+    // ── Batafsil ko'rish modali ──
+    function openLabViewModal(parsed, testName, patientName) {
+        document.getElementById('lv-title').textContent = testName;
+        document.getElementById('lv-subtitle').textContent = 'Bemor: ' + patientName;
+        const body = document.getElementById('lv-indicators-body');
+        body.innerHTML = (parsed.indicators || []).map(i => {
+            const flagLabel = FLAG_LABELS[i.flag] || '';
+            const flagClass = i.flag ? 'flag-' + i.flag : '';
+            return `<tr>
+                <td>${i.name}</td>
+                <td>${i.value}${i.unit ? ' ' + i.unit : ''}</td>
+                <td>${i.ref_range || '—'}</td>
+                <td class="${flagClass}">${flagLabel}</td>
+            </tr>`;
+        }).join('');
+        const noteWrap = document.getElementById('lv-note-wrap');
+        if (parsed.note) {
+            noteWrap.style.display = '';
+            document.getElementById('lv-note').textContent = parsed.note;
+        } else {
+            noteWrap.style.display = 'none';
+        }
+        openModal('labViewModal');
+    }
+{% endblock %}

@@ -1,0 +1,79 @@
+<!-- templates/doctors.html -->
+{% extends "base.html" %}
+
+{% block title %}Doktorlar{% endblock %}
+
+{% block extra_style %}
+.doctor-row-name { display: flex; align-items: center; gap: 12px; }
+.doctor-avatar-sm {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #05070d;
+    background-color: var(--primary);
+    background-image: linear-gradient(135deg, var(--primary), var(--accent-violet));
+}
+{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Doktorlar</h1></div>
+    <div class="header-actions">
+        <div class="table-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="F.I.O yoki mutaxassislik bo'yicha qidirish..." oninput="filterTable(this, 'doctorsTableBody')">
+        </div>
+        {% if current_user.role == 'admin' %}
+        <button class="btn-primary-action" onclick="openDoctorModal()">
+            <i class="fa-solid fa-plus"></i> Yangi Shifokor
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="data-section">
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>F.I.O</th><th>Mutaxassislik</th><th>Xona</th><th>Narxi (UZS)</th><th>Ish jadvali</th><th>Holati</th>
+                {% if current_user.role == 'admin' %}<th>Amallar</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody id="doctorsTableBody">
+            {% for d in doctors %}
+            <tr>
+                <td>#{{ d.id }}</td>
+                <td>
+                    <div class="doctor-row-name">
+                        {% if d.photo_path %}
+                        <div class="doctor-avatar-sm" style="background-image: url('{{ d.photo_path }}');"></div>
+                        {% else %}
+                        <div class="doctor-avatar-sm">{{ d.fullname[0]|upper }}</div>
+                        {% endif %}
+                        <a class="link-name" href="/doctors/{{ d.id }}">{{ d.fullname }}</a>
+                    </div>
+                </td>
+                <td><span class="badge-doctor">{{ d.specialty }}</span></td>
+                <td>{{ d.room or '—' }}</td>
+                <td>{{ "{:,}".format(d.consultation_price) }}</td>
+                <td>{{ d.working_hours or '—' }}</td>
+                <td>{% if d.is_active %}<span class="status-badge status-completed">Faol</span>{% else %}<span class="status-badge status-cancelled">Faol emas</span>{% endif %}</td>
+                {% if current_user.role == 'admin' %}
+                <td class="row-actions">
+                    <button class="btn-icon-sm" title="Tahrirlash"
+                        onclick='openDoctorEditModal({{ {"id": d.id, "fullname": d.fullname, "specialty": d.specialty, "room": d.room, "consultation_price": d.consultation_price, "working_hours": d.working_hours, "is_active": d.is_active, "license_number": d.license_number, "experience_years": d.experience_years, "qualification_category": d.qualification_category}|tojson }})'>
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="btn-icon-sm danger" title="O'chirish" onclick="deleteDoctor({{ d.id }})">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="8">Hozircha shifokorlar yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

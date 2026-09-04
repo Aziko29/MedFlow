@@ -1,0 +1,47 @@
+<!-- templates/portal/dashboard.html -->
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mening navbatlarim · MedFlow</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    {% include "portal/_style.html" %}
+</head>
+<body>
+    {% include "portal/_nav.html" %}
+
+    <main class="portal-main">
+        <h1 class="page-title">Mening navbatlarim</h1>
+
+        {% if appointments %}
+        <div class="card-list">
+            {% for a in appointments %}
+            <div class="item-card">
+                <div class="item-row">
+                    <div class="item-main">
+                        <div class="item-title">{{ a.doctor.fullname if a.doctor else "Shifokor" }}</div>
+                        <div class="item-sub">{{ a.doctor.specialty if a.doctor else "" }}</div>
+                    </div>
+                    <span class="status-badge status-{{ a.status }}">{{ a.status }}</span>
+                </div>
+                <div class="item-meta">
+                    <span><i class="fa-regular fa-calendar"></i> {{ a.scheduled_time.strftime('%d.%m.%Y %H:%M') }}</span>
+                    <span><i class="fa-solid fa-sack-dollar"></i> {{ "{:,}".format(a.price).replace(',', ' ') }} so'm</span>
+                    {% if a.debt > 0 %}
+                    <span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Qarz: {{ "{:,}".format(a.debt).replace(',', ' ') }} so'm</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fa-regular fa-calendar-xmark"></i>
+            <p>Hozircha navbatlaringiz mavjud emas.</p>
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!-- templates/dashboard.html -->
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title">
+        <h1>Bugungi Holat <span>({{ today }})</span></h1>
+    </div>
+    {% if current_user.role in ['admin', 'reception'] %}
+    <button class="btn-primary-action" onclick="openPatientModal()">
+        <i class="fa-solid fa-plus"></i> Yangi Bemor Qo'shish
+    </button>
+    {% endif %}
+</div>
+
+{% macro kpi(label, value, icon, color) %}
+    <div class="kpi-card {{ color }}">
+        <div><h5>{{ label }}</h5><h3>{{ value if value is not none else "—" }}</h3></div>
+        <i class="fas {{ icon }}"></i>
+    </div>
+{% endmacro %}
+
+<div class="kpi-container">
+{% if current_user.role == 'admin' %}
+    {{ kpi("Jami bemorlar", summary.total_patients, "fa-users", "blue") }}
+    {{ kpi("Bugungi navbat", summary.today_appointments, "fa-hourglass-half", "orange") }}
+    {{ kpi("Kutishdagilar", summary.waiting_patients, "fa-user-clock", "orange") }}
+    {{ kpi("Tugagan navbatlar", summary.completed_appointments, "fa-check-circle", "green") }}
+    {{ kpi("Bugungi tushum", summary.today_revenue, "fa-wallet", "purple") }}
+    {{ kpi("Jami qarzdorlik", summary.total_debt, "fa-triangle-exclamation", "red") }}
+    {{ kpi("Bekor qilingan to'lovlar", summary.cancelled_payments, "fa-ban", "red") }}
+    {{ kpi("O'qilmagan xabarlar", summary.unread_security_messages, "fa-envelope", "red" if summary.unread_security_messages else "blue") }}
+    {{ kpi("Xatoliklar (24 soat)", summary.system_errors_24h, "fa-triangle-exclamation", "red" if summary.system_errors_24h else "green") }}
+    {{ kpi("Muvaffaqiyatsiz kirishlar (24s)", summary.failed_logins_24h, "fa-user-shield", "red" if summary.failed_logins_24h else "green") }}
+{% elif current_user.role == 'cashier' %}
+    {{ kpi("Bugungi tushum", summary.today_revenue, "fa-wallet", "purple") }}
+    {{ kpi("Bugungi to'lovlar soni", summary.today_payments_count, "fa-receipt", "blue") }}
+    {{ kpi("Kutishdagi to'lovlar", summary.pending_payments, "fa-hourglass-half", "orange") }}
+    {{ kpi("Kutilayotgan qaytarimlar", summary.pending_refunds, "fa-rotate-left", "red") }}
+    {{ kpi("Bugungi qaytarimlar", summary.today_refunds, "fa-rotate-left", "red") }}
+    {{ kpi("Jami qarzdorlik", summary.total_debt, "fa-triangle-exclamation", "red") }}
+    {{ kpi("Bugungi navbatlar", summary.today_appointments, "fa-calendar-day", "green") }}
+{% elif current_user.role == 'reception' %}
+    {{ kpi("Bugungi navbatlar", summary.today_appointments, "fa-calendar-day", "green") }}
+    {{ kpi("Kutishdagilar", summary.waiting_patients, "fa-user-clock", "orange") }}
+    {{ kpi("Bugungi yangi bemorlar", summary.new_patients_today, "fa-user-plus", "blue") }}
+    {{ kpi("Tugagan navbatlar", summary.completed_appointments, "fa-check-circle", "green") }}
+{% elif current_user.role == 'doctor' %}
+    {{ kpi("Bugungi navbatlarim", summary.my_today_appointments, "fa-calendar-day", "green") }}
+    {{ kpi("Kutishdagi bemorlarim", summary.my_waiting_patients, "fa-user-clock", "orange") }}
+    {{ kpi("Tugagan qabullarim", summary.my_completed_today, "fa-check-circle", "green") }}
+    {{ kpi("Jami bemorlarim", summary.my_patients_count, "fa-users", "blue") }}
+{% elif current_user.role == 'lab_doctor' %}
+    {{ kpi("Kiritilishi kerak tahlillar", summary.my_lab_pending, "fa-flask", "orange") }}
+    {{ kpi("Kiritilgan tahlillarim", summary.my_lab_completed, "fa-check-circle", "green") }}
+    {{ kpi("Bugungi tahlil so'rovlari", summary.today_lab_requests, "fa-vial", "blue") }}
+{% elif current_user.role == 'assistant_admin' %}
+    {{ kpi("Jami bemorlar", summary.total_patients, "fa-users", "blue") }}
+    {{ kpi("Bugungi navbatlar", summary.today_appointments, "fa-calendar-day", "green") }}
+    {{ kpi("Bugungi tushum", summary.today_revenue, "fa-wallet", "purple") }}
+    {{ kpi("Xodimlar soni", summary.staff_count, "fa-id-badge", "blue") }}
+    {{ kpi("Kutishdagilar", summary.waiting_patients, "fa-user-clock", "orange") }}
+    {{ kpi("O'qilmagan xabarlar", summary.unread_security_messages, "fa-envelope", "red" if summary.unread_security_messages else "blue") }}
+{% endif %}
+</div>
+
+<div class="data-section">
+    <div class="section-title">Jonli Kutish Zali (faqat bugungi, hali yakunlanmagan qabullar)</div>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Bemor Ismi</th><th>Shifokor</th>
+                <th>Vaqt</th><th>Qarz (UZS)</th><th>Holat</th>
+            </tr>
+        </thead>
+        <tbody id="live-queue-body">
+            {% for item in queue %}
+            <tr>
+                <td>{{ item.id }}</td>
+                <td><a class="link-name" href="/patients/{{ item.patient_id }}">{{ item.patient_name }}</a></td>
+                <td><a class="link-name" href="/doctors/{{ item.doctor_id }}">{{ item.doctor_name }}</a></td>
+                <td><i class="far fa-clock"></i> {{ item.time }}</td>
+                <td class="{{ 'debt-positive' if item.debt > 0 else 'debt-zero' }}">{{ "{:,}".format(item.debt) }}</td>
+                <td>
+                    {% if item.status == 'waiting' %}<span class="status-badge status-waiting">Kutmoqda</span>
+                    {% elif item.status == 'in_progress' %}<span class="status-badge status-in_progress">Xonada</span>
+                    {% elif item.status == 'delayed' %}<span class="status-badge status-delayed">Kechikayotgan</span>
+                    {% else %}<span class="status-badge status-completed">{{ item.status }}</span>{% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="6">Bugun hech kim navbatda yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+(function () {
+    var STATUS_LABEL = {
+        waiting: "Kutmoqda",
+        in_progress: "Xonada",
+        delayed: "Kechikayotgan",
+    };
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+    }
+
+    function renderQueue(items) {
+        var tbody = document.getElementById("live-queue-body");
+        if (!tbody) return;
+        if (!items.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Bugun hech kim navbatda yo\'q</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map(function (item) {
+            var badgeClass = "status-" + item.status;
+            var badgeLabel = STATUS_LABEL[item.status] || escapeHtml(item.status);
+            var debtClass = item.debt > 0 ? "debt-positive" : "debt-zero";
+            return (
+                "<tr>" +
+                "<td>" + escapeHtml(item.id) + "</td>" +
+                '<td><a class="link-name" href="/patients/' + item.patient_id + '">' + escapeHtml(item.patient_name) + "</a></td>" +
+                '<td><a class="link-name" href="/doctors/' + item.doctor_id + '">' + escapeHtml(item.doctor_name) + "</a></td>" +
+                '<td><i class="far fa-clock"></i> ' + escapeHtml(item.time) + "</td>" +
+                '<td class="' + debtClass + '">' + item.debt.toLocaleString() + "</td>" +
+                '<td><span class="status-badge ' + badgeClass + '">' + badgeLabel + "</span></td>" +
+                "</tr>"
+            );
+        }).join("");
+    }
+
+    function connectLiveQueue() {
+        var source = new EventSource("/api/dashboard/queue/stream");
+        source.addEventListener("queue", function (ev) {
+            try {
+                renderQueue(JSON.parse(ev.data));
+            } catch (e) {
+                console.error("live-queue parse error", e);
+            }
+        });
+        source.onerror = function () {
+            // EventSource avtomatik qayta ulanadi; qo'shimcha harakat shart emas.
+        };
+        window.addEventListener("beforeunload", function () { source.close(); });
+    }
+
+    if (document.getElementById("live-queue-body")) {
+        connectLiveQueue();
+    }
+})();
+</script>
+{% endblock %}

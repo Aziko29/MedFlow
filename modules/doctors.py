@@ -317,7 +317,7 @@ def activate_doctor(
     response_model=schemas.DoctorPhotoUploadResponse,
     dependencies=[Depends(require_role("admin"))],
 )
-async def upload_doctor_photo(
+def upload_doctor_photo(
     doctor_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -330,7 +330,13 @@ async def upload_doctor_photo(
     Doctor.photo_path yangilanadi. Faqat admin (modules/patients.py dagi
     upload_patient_photo bilan bir xil pattern, lekin u yerda
     admin+reception ruxsat berilgan edi — shifokor ma'lumotlarini
-    tahrirlash butun modulda faqat admin uchun, shu bilan izchil)."""
+    tahrirlash butun modulda faqat admin uchun, shu bilan izchil).
+
+    🐛 FIX: `async def` + ichidagi sinxron `db.commit()`/Pillow
+    chaqiruvlari event loop'ini bloklardi (patients.py::upload_patient_photo
+    bilan bir xil muammo). Endi sinxron `def` — FastAPI avtomatik
+    threadpool'da ishga tushiradi.
+    """
     doctor = _get_doctor_or_404(db, doctor_id)
 
     content_type = (file.content_type or "").lower()
@@ -340,7 +346,7 @@ async def upload_doctor_photo(
             detail="Faqat JPG yoki PNG formatidagi rasm qabul qilinadi",
         )
 
-    raw = await file.read()
+    raw = file.file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Bo'sh fayl yuklab bo'lmaydi")
     if len(raw) > MAX_PHOTO_SIZE_BYTES:

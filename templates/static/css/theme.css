@@ -1,0 +1,285 @@
+/* ==========================================================================
+   theme.css — MedFlow / ClinicFlow global theming architecture
+   Prompt 13.1 — Dark / Light mode CSS variables + universal component rules
+   ==========================================================================
+   Usage:
+     <html data-theme="light">   → Qaymoq/warm-cream light mode (default)
+     <html data-theme="dark">    → Deep navy/dark mode
+   Toggle handled by theme-toggle.js logic in base.html (persists to
+   localStorage + respects prefers-color-scheme on first visit).
+   ========================================================================== */
+
+:root,
+[data-theme="light"] {
+    /* ---- Prompt 13.1 core tokens (light / qaymoq theme) ---- */
+    --bg-primary: #FFF8F0;
+    --bg-secondary: #FFF0E0;
+    --bg-sidebar: #F5E6D3;
+    --bg-card: #FFFFFF;
+    --text-primary: #2D2D2D;
+    --text-secondary: #5A5A5A;
+    --text-muted: #8A8A8A;
+    --border-color: #E0D5C8;
+    --accent-color: #4A90A4;
+    --accent-hover: #3A7A8C;
+    --accent-secondary: #B98CC9;
+    --success-color: #5A9A5A;
+    --warning-color: #C4A35A;
+    --danger-color: #B85C5C;
+    --danger-hover: #A34D4D;
+    --table-header-bg: #F0E6D8;
+    --table-row-hover: #F5EDE0;
+    --input-bg: #FFFFFF;
+    --input-border: #D0C5B8;
+    --shadow-color: rgba(0, 0, 0, 0.08);
+    --glow: 0 0 12px rgba(74, 144, 164, 0.25);
+    --scrollbar-thumb: rgba(74, 144, 164, 0.25);
+    --scrollbar-thumb-hover: rgba(74, 144, 164, 0.45);
+
+    /* ---- Legacy variable names kept as aliases so every existing
+       template (base.html + page-level extra_style blocks) re-themes
+       automatically without needing per-file rewrites ---- */
+    --bg-void: var(--bg-primary);
+    --bg-panel: var(--bg-card);
+    --bg-panel-solid: var(--bg-card);
+    --bg-main: var(--bg-primary);
+    --primary: var(--accent-color);
+    --primary-hover: var(--accent-hover);
+    --accent-violet: var(--accent-secondary);
+    --accent-green: var(--success-color);
+    --text-dark: var(--text-primary);
+    --danger: var(--danger-color);
+    --status-progress: var(--accent-color);
+    --status-delayed: var(--accent-secondary);
+}
+
+[data-theme="dark"] {
+    /* ---- Prompt 13.1 core tokens (dark theme) ---- */
+    --bg-primary: #1A1A2E;
+    --bg-secondary: #16213E;
+    --bg-sidebar: #0F3460;
+    --bg-card: #1A1A2E;
+    --text-primary: #EAEAEA;
+    --text-secondary: #B8B8B8;
+    --text-muted: #888888;
+    --border-color: #2A2A4A;
+    --accent-color: #E94560;
+    --accent-hover: #C73E54;
+    --accent-secondary: #A855F7;
+    --success-color: #4CAF50;
+    --warning-color: #FFC107;
+    --danger-color: #F44336;
+    --danger-hover: #D32F2F;
+    --table-header-bg: #16213E;
+    --table-row-hover: #1F2A4A;
+    --input-bg: #16213E;
+    --input-border: #2A2A4A;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --glow: 0 0 14px rgba(233, 69, 96, 0.45);
+    --scrollbar-thumb: rgba(233, 69, 96, 0.25);
+    --scrollbar-thumb-hover: rgba(233, 69, 96, 0.45);
+
+    /* ---- Legacy aliases (dark) ---- */
+    --bg-void: var(--bg-primary);
+    --bg-panel: var(--bg-card);
+    --bg-panel-solid: var(--bg-card);
+    --bg-main: var(--bg-primary);
+    --primary: var(--accent-color);
+    --primary-hover: var(--accent-hover);
+    --accent-violet: var(--accent-secondary);
+    --accent-green: var(--success-color);
+    --text-dark: var(--text-primary);
+    --danger: var(--danger-color);
+    --status-progress: #3B9DFF;
+    --status-delayed: var(--accent-secondary);
+}
+
+/* ==========================================================================
+   Global smooth transition — every element eases between themes instead of
+   flashing when data-theme flips.
+   ========================================================================== */
+*, *::before, *::after {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease,
+                box-shadow 0.3s ease;
+}
+
+html { background-color: var(--bg-primary); }
+
+/* ==========================================================================
+   Universal element / component rules — no hardcoded colors, everything
+   pulled from the variables above.
+   ========================================================================== */
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* ---- Cards (generic .card + every card-like component already in the
+   templates: .kpi-card, .data-section, .profile-card, .report-card) ---- */
+.card,
+.kpi-card,
+.data-section,
+.profile-card,
+.report-card,
+.modal-content {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 16px var(--shadow-color);
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+.sidebar .menu-item a,
+.sidebar .sidebar-footer,
+.sidebar .logout-link {
+    color: var(--text-secondary);
+}
+.sidebar .menu-item a:hover,
+.sidebar .menu-item.active a {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border-left-color: var(--accent-color);
+}
+
+/* ---- Tables (generic .table + project's .content-table) ---- */
+.table,
+.content-table {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+.table th,
+.content-table th {
+    background-color: var(--table-header-bg);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+.table td,
+.content-table td {
+    border-color: var(--border-color);
+}
+.table tr:hover,
+.content-table tr:hover {
+    background-color: var(--table-row-hover);
+}
+
+/* ---- Inputs (generic .input + every real input in the templates) ---- */
+.input,
+input,
+select,
+textarea,
+.table-search input,
+.select-search-input,
+.status-select,
+.form-group input,
+.form-group select,
+.form-group textarea {
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+}
+.input:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    border-color: var(--accent-color);
+    outline: none;
+    box-shadow: var(--glow);
+}
+
+/* ---- Modal ---- */
+.modal {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+[data-theme="dark"] .modal {
+    background-color: rgba(0, 0, 0, 0.65);
+}
+.modal-content {
+    color: var(--text-primary);
+}
+
+/* ---- Badges (generic .badge + project's .status-badge / .badge-doctor) ---- */
+.badge,
+.status-badge,
+.badge-doctor {
+    display: inline-block;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.badge-success,  .status-completed  { background-color: color-mix(in srgb, var(--success-color) 18%, transparent); color: var(--success-color); }
+.badge-warning,  .status-waiting,
+.status-no_show                     { background-color: color-mix(in srgb, var(--warning-color) 20%, transparent); color: var(--warning-color); }
+.badge-danger,   .status-cancelled  { background-color: color-mix(in srgb, var(--danger-color) 16%, transparent); color: var(--danger-color); }
+.badge-info,     .status-in_progress{ background-color: color-mix(in srgb, var(--accent-color) 16%, transparent); color: var(--accent-color); }
+.status-delayed                     { background-color: color-mix(in srgb, var(--accent-secondary) 16%, transparent); color: var(--accent-secondary); }
+.badge-doctor                       { background-color: color-mix(in srgb, var(--accent-secondary) 14%, transparent); color: var(--accent-secondary); }
+
+/* ---- Buttons (generic .btn + the project's real action/save buttons) ---- */
+.btn,
+.btn-primary-action,
+.btn-save {
+    background-color: var(--accent-color);
+    color: #FFFFFF;
+    border: none;
+}
+.btn:hover,
+.btn-primary-action:hover,
+.btn-save:hover {
+    background-color: var(--accent-hover);
+}
+.btn-secondary-action,
+.btn-icon-sm {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+.btn-secondary-action:hover,
+.btn-icon-sm:hover {
+    background-color: var(--table-row-hover);
+    border-color: var(--accent-color);
+}
+.btn-danger-action,
+.btn-save.danger,
+.btn-icon-sm.danger {
+    background-color: color-mix(in srgb, var(--danger-color) 15%, transparent);
+    color: var(--danger-color);
+    border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
+}
+.btn-danger-action:hover,
+.btn-save.danger:hover,
+.btn-icon-sm.danger:hover {
+    background-color: var(--danger-color);
+    color: #FFFFFF;
+}
+.btn:disabled, .btn-save:disabled {
+    background-color: var(--text-muted);
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ---- Theme toggle switch (sidebar) ---- */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 20px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    width: fit-content;
+    margin: 0 0 16px 12px;
+}
+.theme-toggle:hover { border-color: var(--accent-color); }
+.theme-toggle i { color: var(--accent-color); width: 14px; text-align: center; }

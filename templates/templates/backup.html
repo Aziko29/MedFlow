@@ -1,0 +1,193 @@
+<!-- templates/backup.html -->
+{% extends "base.html" %}
+
+{% block title %}Zaxira nusxa{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title">
+        <h1>Zaxira nusxa (Backup)</h1>
+        <span>Bazani har kuni soat {{ "%02d"|format(status.schedule_hour) }}:{{ "%02d"|format(status.schedule_minute) }}da avtomatik zaxiralaydi — faqat admin</span>
+    </div>
+    <div class="header-actions">
+        <button class="btn-primary-action" id="runBackupBtn" onclick="runBackupNow()">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Hoziroq zaxira olish
+        </button>
+    </div>
+</div>
+
+<div class="data-section" style="margin-bottom:20px;">
+    <div class="section-title">Umumiy holat</div>
+    <div style="display:flex; gap:32px; flex-wrap:wrap; padding: 4px 0 12px;">
+        <div>
+            <div style="color:var(--text-muted); font-size:12px;">Baza turi</div>
+            <div style="font-weight:600;">{{ status.db_engine }}</div>
+        </div>
+        <div>
+            <div style="color:var(--text-muted); font-size:12px;">Oxirgi urinish</div>
+            {% if status.last_backup %}
+            <div style="font-weight:600; color:{{ 'var(--accent-green)' if status.last_backup.ok else 'var(--danger)' }};">
+                {{ status.last_backup.started_at[:19]|replace("T", " ") }} —
+                {{ "muvaffaqiyatli" if status.last_backup.ok else "xato" }}
+            </div>
+            {% else %}
+            <div style="font-weight:600; color:var(--text-muted);">Hali zaxira olinmagan</div>
+            {% endif %}
+        </div>
+        <div>
+            <div style="color:var(--text-muted); font-size:12px;">Keyingi avtomatik</div>
+            <div style="font-weight:600;">Har kuni {{ "%02d"|format(status.schedule_hour) }}:{{ "%02d"|format(status.schedule_minute) }}</div>
+        </div>
+    </div>
+    <div id="runBackupResult" style="display:none; padding:10px 12px; border-radius:6px; font-size:13px; margin-top:4px;"></div>
+</div>
+
+<div class="data-section" style="margin-bottom:20px;">
+    <div class="section-title">Ikkilamchi zaxira manzillari</div>
+    <div style="color:var(--text-muted); font-size:13px; padding-bottom:12px;">
+        Har kuni asosiy zaxiradan tashqari, quyida yoqilgan (checkbox) manzillarga ham avtomatik nusxa ko'chiriladi.
+        Yo'l — serverdagi (yoki tarmoqqa ulangan) papka manzili, masalan: <code>D:\Backups\MedFlow</code>,
+        tarmoq uchun <code>\\SERVER\backups</code>, tashqi xotira uchun <code>E:\MedFlowBackup</code>.
+    </div>
+
+    {% for d in status.destinations %}
+    <div class="form-group" style="border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="dest-enabled-{{ d.type }}" style="width:auto;" {% if d.enabled %}checked{% endif %}>
+            {{ d.label }}
+        </label>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+            <input type="text" id="dest-path-{{ d.type }}" value="{{ d.path }}" placeholder="Masalan: D:\Backups\MedFlow" style="flex:1;">
+            <button type="button" class="btn-icon-sm" title="Yo'lni tekshirish" onclick="checkDestPath('{{ d.type }}')">
+                <i class="fa-solid fa-magnifying-glass"></i> Tekshirish
+            </button>
+        </div>
+        <div id="dest-status-{{ d.type }}" style="font-size:12px; margin-top:6px; color:var(--text-muted);"></div>
+    </div>
+    {% endfor %}
+
+    <button class="btn-save" id="saveBackupSettingsBtn" onclick="saveBackupSettings()">Sozlamalarni saqlash</button>
+</div>
+
+<div class="data-section">
+    <div class="section-title">So'nggi urinishlar</div>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>Vaqt</th><th>Turi</th><th>Holat</th><th>Fayl</th><th>Hajmi</th><th>Manzillar</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in history %}
+            <tr>
+                <td>{{ item.started_at[:19]|replace("T", " ") }}</td>
+                <td>{{ "Qo'lda" if item.trigger == "manual" else "Avtomatik" }} ({{ item.actor }})</td>
+                <td>
+                    <span class="status-badge" style="{% if item.ok %}background:rgba(57,255,157,0.15); color:var(--accent-green);{% else %}background:rgba(255,61,110,0.15); color:var(--danger);{% endif %}">
+                        {{ "OK" if item.ok else "Xato" }}
+                    </span>
+                </td>
+                <td>{{ item.filename or "—" }}</td>
+                <td>{% if item.size_bytes %}{{ (item.size_bytes / 1024) | round(1) }} KB{% else %}—{% endif %}</td>
+                <td style="font-size:12px;">
+                    {% if item.ok and item.destinations %}
+                        {% for dr in item.destinations %}
+                            <div style="color:{{ 'var(--accent-green)' if dr.status == 'ok' else 'var(--danger)' }};">
+                                {{ dr.label }}: {{ "OK" if dr.status == "ok" else dr.get("error", "xato") }}
+                            </div>
+                        {% endfor %}
+                    {% elif not item.ok %}
+                        <span style="color:var(--danger);">{{ item.error }}</span>
+                    {% else %}
+                        <span style="color:var(--text-muted);">Faqat mahalliy backups/ papkasiga</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Hozircha urinishlar yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+    const BACKUP_TYPES = [{% for d in status.destinations %}"{{ d.type }}"{% if not loop.last %},{% endif %}{% endfor %}];
+
+    async function checkDestPath(type) {
+        const path = document.getElementById(`dest-path-${type}`).value.trim();
+        const statusEl = document.getElementById(`dest-status-${type}`);
+        statusEl.style.color = 'var(--text-muted)';
+        statusEl.textContent = 'Tekshirilmoqda...';
+        try {
+            const result = await fetchJSON('/admin/backup/check-path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            statusEl.style.color = result.writable ? 'var(--accent-green)' : 'var(--danger)';
+            statusEl.textContent = result.message;
+        } catch (err) {
+            statusEl.style.color = 'var(--danger)';
+            statusEl.textContent = err.message;
+        }
+    }
+
+    async function saveBackupSettings() {
+        const btn = document.getElementById('saveBackupSettingsBtn');
+        btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
+        const destinations = BACKUP_TYPES.map(type => ({
+            type,
+            path: document.getElementById(`dest-path-${type}`).value.trim(),
+            enabled: document.getElementById(`dest-enabled-${type}`).checked
+        }));
+        try {
+            await fetchJSON('/admin/backup/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ destinations })
+            });
+            btn.textContent = 'Saqlandi ✓';
+            setTimeout(() => { btn.textContent = 'Sozlamalarni saqlash'; }, 1500);
+        } catch (err) {
+            showToast("Saqlashda xatolik: " + err.message, "error");
+            btn.textContent = 'Sozlamalarni saqlash';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function runBackupNow() {
+        const btn = document.getElementById('runBackupBtn');
+        const resultEl = document.getElementById('runBackupResult');
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Zaxiralanmoqda...';
+        try {
+            const result = await fetchJSON('/admin/backup/run', { method: 'POST' });
+            resultEl.style.display = 'block';
+            if (result.ok) {
+                let destInfo = '';
+                if (result.destinations && result.destinations.length) {
+                    destInfo = ' | Manzillar: ' + result.destinations.map(d => `${d.label}: ${d.status === 'ok' ? 'OK' : 'xato'}`).join(', ');
+                }
+                resultEl.style.background = 'rgba(57,255,157,0.1)';
+                resultEl.style.color = 'var(--accent-green)';
+                resultEl.textContent = `✅ Backup yaratildi: ${result.filename}${destInfo}`;
+            } else {
+                resultEl.style.background = 'rgba(255,61,110,0.1)';
+                resultEl.style.color = 'var(--danger)';
+                resultEl.textContent = `⚠️ Xato: ${result.error}`;
+            }
+            setTimeout(() => location.reload(), 1800);
+        } catch (err) {
+            resultEl.style.display = 'block';
+            resultEl.style.background = 'rgba(255,61,110,0.1)';
+            resultEl.style.color = 'var(--danger)';
+            resultEl.textContent = "Xatolik: " + err.message;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+{% endblock %}

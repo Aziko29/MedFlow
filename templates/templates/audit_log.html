@@ -1,0 +1,51 @@
+<!-- templates/audit_log.html -->
+{% extends "base.html" %}
+
+{% block title %}Audit jurnal{% endblock %}
+
+{% block content %}
+<div class="header-container">
+    <div class="header-title"><h1>Audit jurnal</h1></div>
+    <div style="color:var(--text-muted); font-size: 13px;">Kim, qachon, nima qildi — faqat admin ko'radi</div>
+</div>
+
+<div class="data-section">
+    <div class="section-title">So'nggi {{ logs|length }} ta yozuv (jami: {{ total }})</div>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>Vaqt</th>
+                <th>Foydalanuvchi</th>
+                <th>Amal</th>
+                <th>Obyekt</th>
+                <th>Tafsilot</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ log.username }}</td>
+                <td><code>{{ log.action }}</code></td>
+                <td>{{ log.entity_type }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</td>
+                <td style="color:var(--text-muted); font-size: 13px;">{{ log.details or "" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Hozircha audit yozuvlari yo'q</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if total_pages > 1 %}
+    <div style="display:flex; gap:8px; justify-content:center; padding: 16px 0;">
+        {% if page > 1 %}
+        <a href="/admin/audit-log?page={{ page - 1 }}" style="padding:6px 14px; border-radius:6px; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-dark); text-decoration:none;">← Oldingi</a>
+        {% endif %}
+        <span style="padding:6px 14px; color:var(--text-muted);">{{ page }} / {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="/admin/audit-log?page={{ page + 1 }}" style="padding:6px 14px; border-radius:6px; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-dark); text-decoration:none;">Keyingi →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

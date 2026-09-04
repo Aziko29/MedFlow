@@ -281,7 +281,11 @@ _APPOINTMENT_SORT_COLUMNS = {
 }
 
 
-@router.get("/list", response_model=schemas.AppointmentPage)
+@router.get(
+    "/list",
+    response_model=schemas.AppointmentPage,
+    dependencies=[Depends(require_role("admin", "reception", "cashier", "doctor", "assistant_admin"))],
+)
 def list_appointments(
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, description="Bemor yoki shifokor F.I.O bo'yicha qidirish"),
@@ -373,7 +377,11 @@ def list_appointments_all(db: Session) -> List[schemas.AppointmentDetail]:
     return [_to_detail(a) for a in appointments]
 
 
-@router.get("/patient/{patient_id}", response_model=List[schemas.AppointmentDetail])
+@router.get(
+    "/patient/{patient_id}",
+    response_model=List[schemas.AppointmentDetail],
+    dependencies=[Depends(require_role("admin", "reception", "cashier", "doctor", "assistant_admin"))],
+)
 def list_appointments_for_patient(
     patient_id: int = Path(..., ge=1, le=2147483647),
     db: Session = Depends(get_db)
@@ -387,7 +395,11 @@ def list_appointments_for_patient(
     return [_to_detail(a) for a in appointments]
 
 
-@router.get("/doctor/{doctor_id}", response_model=List[schemas.AppointmentDetail])
+@router.get(
+    "/doctor/{doctor_id}",
+    response_model=List[schemas.AppointmentDetail],
+    dependencies=[Depends(require_role("admin", "reception", "cashier", "doctor", "assistant_admin"))],
+)
 def list_appointments_for_doctor(
     doctor_id: int = Path(..., ge=1, le=2147483647),
     db: Session = Depends(get_db)
@@ -482,15 +494,19 @@ def reschedule_appointment(
     # ko'chirishga urinishi mumkin).
     _lock_doctor_for_booking(db, appointment.doctor_id)
 
-    collision = (
-        db.query(models.Appointment)
-        .filter(
-            models.Appointment.id != appointment_id,
-            models.Appointment.doctor_id == appointment.doctor_id,
-            models.Appointment.scheduled_time == data.scheduled_time,
-            models.Appointment.status.in_(ACTIVE_STATUSES + ("completed",)),
-        )
-        .first()
+    # 🐛 FIX: aniq vaqt (==) emas, book_appointment'dagi kabi
+    # queue_interval_minutes oralig'idagi HAR QANDAY ziddiyat
+    # tekshiriladi — aks holda bir shifokorni interval ichida (masalan
+    # 09:00 va 09:10, interval=15) ikkiga ko'chirish mumkin bo'lardi.
+    # `exclude_appointment_id` — ko'chirilayotgan qabulning o'zi
+    # o'ziga qarshi ziddiyat sifatida hisoblanmasligi uchun.
+    queue_interval_minutes = _get_queue_interval_minutes(db)
+    collision = _find_conflicting_appointment(
+        db,
+        appointment.doctor_id,
+        data.scheduled_time,
+        queue_interval_minutes,
+        exclude_appointment_id=appointment_id,
     )
     if collision:
         raise HTTPException(
@@ -517,7 +533,22 @@ def cancel_appointment(
     user: models.User = Depends(get_current_user),
 ) -> schemas.AppointmentDetail:
     appointment = _get_appointment_or_404(db, appointment_id)
-    if appointment.status not in models.APPOINTMENT_TRANSITIONS:
+    # ⬅️ TUZATISH (#13-band): ilgari bu yerda `appointment.status not in
+    # models.APPOINTMENT_TRANSITIONS` tekshirilardi — bugun bu TO'G'RI
+    # natija beradi, chunki APPOINTMENT_TRANSITIONS'ning kalitlari
+    # ("waiting", "delayed", "in_progress") aynan ACTIVE_STATUSES bilan
+    # bir xil to'plam. Lekin bu — nozik/tasodifiy bog'liqlik: fayl
+    # boshida aynan shu maqsad ("bekor qilib bo'ladigan holatlarmi?")
+    # uchun mo'ljallangan ACTIVE_STATUSES tuple bor edi, undan foydalanish
+    # kerak edi. APPOINTMENT_TRANSITIONS state-machine'ning "qaysi
+    # holatdan qaysi holatga o'tish mumkin" ma'lumotini bildiradi — uning
+    # kalitlari tasodifan "faol" holatlar bilan mos tushib qolgan, xolos.
+    # Agar kelajakda shu dict o'zgartirilsa (masalan yangi status
+    # qo'shilsa yoki "completed"dan biror o'tish qo'shilsa), bu tekshiruv
+    # sezilmasdan buzilishi mumkin edi. Endi to'g'ridan-to'g'ri
+    # ACTIVE_STATUSES'ga tayanadi — bir xil niyat bir xil manbadan
+    # o'qiladi (491-qatordagi reschedule tekshiruvi bilan bir xil naqsh).
+    if appointment.status not in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail=f"'{appointment.status}' holatidagi qabulni bekor qilib bo'lmaydi")
     appointment.status = "cancelled"
     appointment.cancel_reason = cancel_data.reason
@@ -527,7 +558,11 @@ def cancel_appointment(
     return _to_detail(appointment)
 
 
-@router.get("/{appointment_id}", response_model=schemas.AppointmentDetail)
+@router.get(
+    "/{appointment_id}",
+    response_model=schemas.AppointmentDetail,
+    dependencies=[Depends(require_role("admin", "reception", "cashier", "doctor", "assistant_admin"))],
+)
 def get_appointment(
     appointment_id: int = Path(..., ge=1, le=2147483647),
     db: Session = Depends(get_db)

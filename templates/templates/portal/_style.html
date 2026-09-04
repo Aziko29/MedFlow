@@ -1,0 +1,85 @@
+<!-- templates/portal/_style.html — bemor portali uchun umumiy uslub.
+     base.html'dagi CSS custom property'lar qayta ishlatiladi (uslubiy
+     izchillik uchun), lekin sidebar/menyu HTML tuzilmasi ULANMAYDI —
+     bu alohida, yengil, mobil-birinchi shablon oilasi. -->
+<style>
+    :root {
+        --bg-void: #05070d; --bg-panel: rgba(15, 23, 36, 0.6); --bg-panel-solid: #0b101c;
+        --primary: #00e5ff; --primary-hover: #33ecff; --accent-violet: #a855f7;
+        --accent-green: #39ff9d; --text-dark: #e6f1ff; --text-muted: #7c8aa8;
+        --border-color: rgba(0, 229, 255, 0.15); --danger: #ff3d6e; --danger-hover: #ff1f57;
+        --status-progress: #3b9dff; --status-delayed: #c084fc;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+    body {
+        min-height: 100vh; color: var(--text-dark);
+        background:
+            radial-gradient(circle at 15% 10%, rgba(168, 85, 247, 0.10), transparent 40%),
+            radial-gradient(circle at 85% 0%, rgba(0, 229, 255, 0.08), transparent 45%),
+            var(--bg-void);
+        background-attachment: fixed;
+        padding-bottom: 40px;
+    }
+    h1, h2, .brand { font-family: 'Space Grotesk', 'Inter', sans-serif; }
+
+    .portal-nav {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+        background: rgba(8, 12, 22, 0.85); backdrop-filter: blur(14px);
+        position: sticky; top: 0; z-index: 10;
+    }
+    .portal-nav .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; }
+    .portal-nav .brand i { color: var(--primary); }
+    .portal-nav .patient-name { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .portal-nav .nav-right { display: flex; align-items: center; gap: 18px; }
+    .portal-tabs { display: flex; gap: 4px; }
+    .portal-tabs a {
+        color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 500;
+        padding: 8px 12px; border-radius: 8px; transition: all 0.15s;
+    }
+    .portal-tabs a:hover { color: #fff; background: rgba(0,229,255,0.06); }
+    .portal-tabs a.active { color: #fff; background: rgba(0,229,255,0.12); }
+    .logout-btn {
+        background: none; border: 1px solid var(--border-color); color: var(--text-muted);
+        padding: 7px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
+    }
+    .logout-btn:hover { color: var(--danger); border-color: rgba(255,61,110,0.3); }
+
+    .portal-main { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+    .page-title { font-size: 20px; font-weight: 700; margin-bottom: 18px; }
+
+    .card-list { display: flex; flex-direction: column; gap: 12px; }
+    .item-card {
+        background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px;
+        padding: 16px;
+    }
+    .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .item-main { flex: 1; min-width: 0; }
+    .item-title { font-weight: 600; font-size: 15px; }
+    .item-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .item-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--text-muted); }
+    .item-meta i { margin-right: 4px; color: var(--primary); }
+    .text-danger { color: var(--danger) !important; }
+    .text-danger i { color: var(--danger) !important; }
+
+    .status-badge {
+        font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;
+        text-transform: capitalize; white-space: nowrap;
+        background: rgba(124,138,168,0.15); color: var(--text-muted);
+    }
+    .status-waiting { background: rgba(0,229,255,0.12); color: var(--primary); }
+    .status-in_progress { background: rgba(59,157,255,0.15); color: var(--status-progress); }
+    .status-delayed { background: rgba(192,132,252,0.15); color: var(--status-delayed); }
+    .status-completed { background: rgba(57,255,157,0.15); color: var(--accent-green); }
+    .status-cancelled, .status-no_show { background: rgba(255,61,110,0.12); color: var(--danger); }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty-state i { font-size: 32px; margin-bottom: 12px; display: block; color: var(--border-color); }
+
+    .result-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+    .result-badge.ok { background: rgba(57,255,157,0.15); color: var(--accent-green); }
+    .result-badge.warn { background: rgba(255,61,110,0.15); color: var(--danger); }
+
+    .amount-positive { color: var(--accent-green); font-weight: 600; }
+    .amount-refund { color: var(--danger); font-weight: 600; }
+</style>

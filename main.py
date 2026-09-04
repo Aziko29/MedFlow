@@ -15,6 +15,9 @@ import os
 import logging
 import time
 import traceback as traceback_module
+import base64
+import hashlib
+import re
 from contextlib import asynccontextmanager, closing
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
@@ -25,13 +28,13 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, defer
 from sqlalchemy import or_
 
 import models
@@ -174,24 +177,172 @@ app.add_middleware(SlowAPIMiddleware)
 # 🛡️ XAVFSIZLIK SARLAVHALARI (SECURITY HEADERS MIDDLEWARE)
 # OWASP ZAP tomonidan aniqlangan zaifliklarni yopish uchun
 # ==============================================
+#
+# 🐛 FIX (CSP 'unsafe-inline'): ilgari script-src'da 'unsafe-inline'
+# bor edi — bu har qanday inline <script> yoki onclick="..." kabi
+# atributni (shu jumladan XSS orqali INJEKSIYA qilingan kodni ham)
+# bemalol ishga tushirishga ruxsat berardi, ya'ni CSP'ning XSS'ga
+# qarshi asosiy himoyasini deyarli ma'nosiz qilardi.
+#
+# To'g'ridan-to'g'ri 'unsafe-inline'ni olib tashlab, nonce qo'shish —
+# bu yerda ishlamaydi: ilovada 17 ta shablon bo'ylab 140+ ta
+# onclick="..." kabi inline hodisa-ishlovchisi bor, va CSP spetsifikatsiyasiga
+# ko'ra 'nonce-'/'sha256-' manbasi qo'shilgan zahoti 'unsafe-inline'
+# ZAMONAVIY brauzerlarda BUTUNLAY e'tiborsiz qoldiriladi — ya'ni nonce
+# faqat <script> teglariga qo'yilsa ham, barcha onclick tugmalari
+# ishlamay qoladi (butun UI buziladi).
+#
+# Shuning uchun HASH-ASOSLI (allow-list) yondashuv qo'llanadi: har bir
+# javob (response) HTML bo'lsa, RENDER QILINGANDAN KEYIN unda haqiqatda
+# mavjud bo'lgan <script>...</script> va onXXX="..." atribut
+# tarkiblarining SHA-256 xeshlari hisoblanadi va CSP'ga aniq shu
+# xeshlar RUXSAT ETILGAN manba sifatida qo'shiladi (`'sha256-...'` va
+# hodisa-atributlar uchun `'unsafe-hashes'`). Natijada:
+#   - Shablonlarda mavjud, LEGITIM inline kod (server tomonidan
+#     render qilingan) ishlashda davom etadi — HECH bir shablonni
+#     qayta yozish shart emas.
+#   - Hujumchi tomonidan XSS orqali INJEKSIYA qilingan har qanday
+#     yangi <script> yoki onXXX="..." — uning xeshi allow-list'da
+#     bo'lmagani uchun — brauzer tomonidan BLOKLANADI.
+# Bu — 'unsafe-inline'ning o'zi bergan ("istalgan inline kod
+# ishlaydi") umumiy ruxsatdan farqli, "faqat AYNAN shu javobda
+# render qilingan kod ishlaydi" tamoyiliga asoslangan qat'iy CSP.
+_INLINE_SCRIPT_RE = re.compile(
+    r"<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>",
+    re.IGNORECASE | re.DOTALL,
+)
+_INLINE_EVENT_ATTR_RE = re.compile(
+    r"""\bon[a-z]+\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+    re.IGNORECASE,
+)
+# 🐛 FIX (CSP 'unsafe-inline' — #3-band, style-src): script-src'dagi bilan
+# AYNAN bir xil muammo style-src'da ham bor edi — 'unsafe-inline' istalgan
+# inline <style>...</style> blokini VA istalgan style="..." atributini
+# (shu jumladan XSS orqali INJEKSIYA qilingan, masalan
+# style="background:url(javascript:...)" yoki CSS orqali ma'lumot sizib
+# chiqadigan uslublarni) bemalol ishga tushirishga ruxsat berardi.
+# script-src'dagi bilan bir xil hash-asoslik yondashuv qo'llaniladi:
+#   - <style>...</style> tarkibi   -> oddiy 'sha256-...' (script bilan bir xil)
+#   - style="..." atribut qiymati  -> 'unsafe-hashes' + 'sha256-...' (CSS
+#     spetsifikatsiyasiga ko'ra atribut-ichidagi hash faqat 'unsafe-hashes'
+#     birga bo'lsa ishlaydi — xuddi onXXX="..." hodisa-atributlari kabi).
+_INLINE_STYLE_TAG_RE = re.compile(
+    r"<style[^>]*>(.*?)</style>",
+    re.IGNORECASE | re.DOTALL,
+)
+_INLINE_STYLE_ATTR_RE = re.compile(
+    r"""\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+    re.IGNORECASE,
+)
+
+
+def _sha256_b64(content: str) -> str:
+    return base64.b64encode(hashlib.sha256(content.encode("utf-8")).digest()).decode("ascii")
+
+
+def _collect_inline_script_hashes(html: str) -> tuple[set[str], set[str]]:
+    """HTML matnidan inline <script> tarkiblari va onXXX="..." hodisa
+    atributlari qiymatlarining SHA-256 (base64) xeshlarini yig'adi.
+    Qaytadi: (script_hashes, event_attr_hashes)."""
+    script_hashes: set[str] = set()
+    for match in _INLINE_SCRIPT_RE.finditer(html):
+        body = match.group(1)
+        if body.strip():
+            script_hashes.add(_sha256_b64(body))
+
+    event_hashes: set[str] = set()
+    for match in _INLINE_EVENT_ATTR_RE.finditer(html):
+        value = match.group(1) if match.group(1) is not None else match.group(2)
+        # CSP 'unsafe-hashes' xeshi HTML-unescape qilinmagan, brauzer
+        # ko'radigan HAM XUDDI shu (attribute-encoded) matn ustidan
+        # hisoblanadi — shuning uchun bu yerda ham xom (raw) qiymat
+        # ishlatiladi, qo'shimcha dekodlash qilinmaydi.
+        if value.strip():
+            event_hashes.add(_sha256_b64(value))
+
+    return script_hashes, event_hashes
+
+
+def _collect_inline_style_hashes(html: str) -> tuple[set[str], set[str]]:
+    """HTML matnidan inline <style> tarkiblari va style="..." atribut
+    qiymatlarining SHA-256 (base64) xeshlarini yig'adi (#3-band).
+    Qaytadi: (style_tag_hashes, style_attr_hashes)."""
+    style_tag_hashes: set[str] = set()
+    for match in _INLINE_STYLE_TAG_RE.finditer(html):
+        body = match.group(1)
+        if body.strip():
+            style_tag_hashes.add(_sha256_b64(body))
+
+    style_attr_hashes: set[str] = set()
+    for match in _INLINE_STYLE_ATTR_RE.finditer(html):
+        value = match.group(1) if match.group(1) is not None else match.group(2)
+        if value.strip():
+            style_attr_hashes.add(_sha256_b64(value))
+
+    return style_tag_hashes, style_attr_hashes
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    
+
     # 1. MIME-sniffing hujumlaridan himoya (X-Content-Type-Options)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    
+
     # 2. Clickjacking (UI Redressing) himoyasi (X-Frame-Options)
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    
+
     # 3. Eskirgan brauzerlar uchun XSS filtr
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    
-    # 4. Content Security Policy (CSP)
+
+    # 4. Content Security Policy (CSP) — script-src endi hash-asoslik
+    # allow-list bilan qat'iylashtirilgan (yuqoridagi izohga qarang).
+    # Faqat HTML javoblar tekshiriladi (JSON/statik fayllar CSP'dan
+    # mustaqil — ularda ijro etiladigan inline skript bo'lmaydi).
+    content_type = response.headers.get("content-type", "")
+    script_src_extra = ""
+    style_src_extra = ""
+    if "text/html" in content_type:
+        body_chunks = [chunk async for chunk in response.body_iterator]
+        body = b"".join(body_chunks)
+        html_text = body.decode("utf-8", errors="ignore")
+
+        script_hashes, event_hashes = _collect_inline_script_hashes(html_text)
+        parts = [f"'sha256-{h}'" for h in sorted(script_hashes)]
+        if event_hashes:
+            parts.append("'unsafe-hashes'")
+            parts.extend(f"'sha256-{h}'" for h in sorted(event_hashes))
+        if parts:
+            script_src_extra = " " + " ".join(parts)
+
+        # #3-band: style-src uchun ham xuddi shunday — <style> tarkiblari
+        # oddiy sha256 sifatida, style="..." atribut qiymatlari esa
+        # 'unsafe-hashes' bilan birga qo'shiladi.
+        style_tag_hashes, style_attr_hashes = _collect_inline_style_hashes(html_text)
+        style_parts = [f"'sha256-{h}'" for h in sorted(style_tag_hashes)]
+        if style_attr_hashes:
+            style_parts.append("'unsafe-hashes'")
+            style_parts.extend(f"'sha256-{h}'" for h in sorted(style_attr_hashes))
+        if style_parts:
+            style_src_extra = " " + " ".join(style_parts)
+
+        # body_iterator bir marta sarflanadi — qayta o'qilgan baytlar
+        # bilan yangi Response yaratamiz, aks holda javob tanasi bo'sh
+        # jo'natiladi.
+        response = Response(
+            content=body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
     csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        f"script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com{script_src_extra}; "
+        f"style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com{style_src_extra}; "
         "img-src 'self' data:; "
         "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; "
         "object-src 'none'; "
@@ -200,7 +351,7 @@ async def add_security_headers(request: Request, call_next):
         "frame-ancestors 'self';"
     )
     response.headers["Content-Security-Policy"] = csp
-    
+
     return response
 
 # Static fayllar uchun (agar mavjud bo'lsa)
@@ -593,6 +744,18 @@ def patient_detail_page(
                 "raw_text": None if parsed else r.result_data,
             })
 
+    # 🛏️ TUZATISH (#11-band): Palata (statsionar) tarixi — API
+    # (`GET /api/patients/{id}`, modules/patients.py::get_patient) buni
+    # to'g'ri qaytaradi, lekin bu server-render HTML sahifasi uni
+    # umuman so'ramas/kontekstga uzatmas edi, shuning uchun
+    # patient_detail.html'da hech qachon ko'rinmasdi. `patient.admissions`
+    # relationship'i models.py'da `order_by="PatientAdmission.admitted_at.desc()"`
+    # bilan e'lon qilingan, shuning uchun bu yerda qo'shimcha saralash
+    # shart emas. Ruxsat: palata/rooms/admitted bilan bir xil naqsh
+    # (admin/reception/doctor) — statsionar ma'lumot cashier/lab_doctor'ga
+    # kerak emas.
+    admissions = patient.admissions if can_view_treatment else []
+
     return templates.TemplateResponse(
         request=request,
         name="patient_detail.html",
@@ -613,6 +776,7 @@ def patient_detail_page(
                 "treatment_history": treatment_history,
                 "treatment_doctors": treatment_doctors,
                 "can_view_treatment": can_view_treatment,
+                "admissions": admissions,
             },
         ),
     )
@@ -1077,10 +1241,23 @@ def profile_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
     gov_integration_enabled = False
     gov_integration_name = None
     if user.role == "admin":
-        gov_settings = db.query(models.GovIntegrationSettings).first()
-        if gov_settings is not None:
-            gov_integration_enabled = gov_settings.is_enabled
-            gov_integration_name = gov_settings.integration_name
+        # 🔒 with_entities bilan FAQAT is_enabled/integration_name
+        # tanlanadi — api_key/api_secret (EncryptedString) ustunlari
+        # SQL SELECT'ga umuman kirmaydi, shuning uchun ORM ularni
+        # deshifrlashga urinmaydi. Aks holda (butun qatorni yuklasa)
+        # CLINICFLOW_FIELD_KEY o'rnatilmagan muhitda profil sahifasi
+        # FieldEncryptionError bilan qulab tushardi, hatto admin faqat
+        # yoqilgan/o'chirilgan holatni ko'rmoqchi bo'lsa ham.
+        gov_row = (
+            db.query(
+                models.GovIntegrationSettings.is_enabled,
+                models.GovIntegrationSettings.integration_name,
+            )
+            .first()
+        )
+        if gov_row is not None:
+            gov_integration_enabled = gov_row.is_enabled
+            gov_integration_name = gov_row.integration_name
 
     return templates.TemplateResponse(
         request=request,
@@ -1410,7 +1587,17 @@ def users_page(
     if "users" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
 
-    users = db.query(models.User).order_by(models.User.id).all()
+    # 🔒 FIX: `defer(models.User.password_hash)` — bu ustun SQL SELECT'ga
+    # umuman kirmaydi (haqiqiy parol xeshi bazadan o'qilmaydi ham),
+    # shuning uchun `User` obyekti (va uni ishlatuvchi `users.html`
+    # shabloni) xotirada ham parol xeshini saqlamaydi — ilgari to'liq
+    # qator (`password_hash` bilan birga) template'ga uzatilardi.
+    users = (
+        db.query(models.User)
+        .options(defer(models.User.password_hash))
+        .order_by(models.User.id)
+        .all()
+    )
     all_doctors = list_doctors(db)
     doctors_by_id = {d.id: d.fullname for d in all_doctors}
 
@@ -1441,7 +1628,15 @@ def user_detail_page(
     if "users" not in ROLE_MODULE_ACCESS.get(user.role, {"dashboard"}):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
 
-    target = db.query(models.User).filter(models.User.id == user_id).first()
+    # 🔒 FIX: xuddi users_page'dagi kabi — password_hash bazadan
+    # o'qilmaydi, shuning uchun `target` (va uning template'ga
+    # uzatilishi) xotirada ham parol xeshini saqlamaydi.
+    target = (
+        db.query(models.User)
+        .options(defer(models.User.password_hash))
+        .filter(models.User.id == user_id)
+        .first()
+    )
     if target is None:
         raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
 

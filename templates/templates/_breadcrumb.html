@@ -1,0 +1,22 @@
+{# templates/_breadcrumb.html
+   Qayta ishlatiladigan Breadcrumb komponenti.
+
+   Ishlatilishi:
+       {% from "_breadcrumb.html" import breadcrumb %}
+       {{ breadcrumb([("Bosh sahifa", "/dashboard"), ("Bemorlar", "/patients"), (patient.fullname, none)]) }}
+
+   `items` — (label, url) juftliklaridan iborat ro'yxat. Oxirgi element
+   joriy (faol) sahifa hisoblanadi va har doim havolasiz, oddiy matn
+   sifatida chiqariladi (url qiymatidan qat'i nazar). #}
+{% macro breadcrumb(items) %}
+<nav class="breadcrumb" aria-label="breadcrumb">
+    {% for label, url in items %}
+        {% if not loop.last and url %}
+        <a href="{{ url }}" class="breadcrumb-item">{{ label }}</a>
+        <i class="fa-solid fa-chevron-right breadcrumb-sep"></i>
+        {% else %}
+        <span class="breadcrumb-item current" aria-current="page">{{ label }}</span>
+        {% endif %}
+    {% endfor %}
+</nav>
+{% endmacro %}
